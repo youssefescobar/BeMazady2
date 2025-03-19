@@ -3,7 +3,7 @@ const router = express.Router();
 const {
   registerValidationRules,
   loginValidationRules,
-} = require("../utils/AuthValid");
+} = require("../utils/Validators/AuthValid");
 const { register, login } = require("../controllers/AuthController");
 
 // Register route

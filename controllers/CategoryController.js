@@ -2,6 +2,7 @@ const slugify = require("slugify");
 const asyncHandler = require("express-async-handler");
 const CategoryModel = require("../models/category");
 const ApiError = require("../utils/ApiError");
+const ApiFeatures = require("../utils/ApiFeatures");
 
 // Create Category - Private
 const CreateCategory = asyncHandler(async (req, res) => {
@@ -12,11 +13,33 @@ const CreateCategory = asyncHandler(async (req, res) => {
 
 //Get all Categories - Public
 const GetAllCategories = asyncHandler(async (req, res) => {
-  const page = req.query.page * 1;
-  const limit = req.query.limit * 1;
-  const skip = (page - 1) * limit;
-  const categories = await CategoryModel.find({}).skip(skip).limit(limit);
-  res.status(200).json({ results: categories.length, page, data: categories });
+  let query = CategoryModel.find();
+
+  const features = new ApiFeatures(query, req.query)
+    .filter("Category")
+    .sort()
+    .limitFields()
+    .paginate();
+
+  //  Get the total count before pagination
+  const totalCategories = await CategoryModel.countDocuments(
+    features.query.getFilter()
+  );
+
+  // Apply pagination and get the categories
+  const categories = await features.query;
+
+  // Calculate total pages
+  const limit = req.query.limit * 1 || 10;
+  const totalPages = Math.ceil(totalCategories / limit);
+
+  res.status(200).json({
+    results: categories.length,
+    totalCategories,
+    totalPages,
+    currentPage: req.query.page * 1 || 1,
+    data: categories,
+  });
 });
 
 // Get specific Category - Public

@@ -12,7 +12,7 @@ const {
   UpdateSubcategoryValidator,
   DeleteSubcategoryValidator,
   CreateSubcategoryValidator,
-} = require("../utils/SubcategoryValid");
+} = require("../utils/Validators/SubcategoryValid");
 
 router
   .route("/")

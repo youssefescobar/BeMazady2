@@ -12,7 +12,7 @@ const {
   UpdateItemValidator,
   GetItemValidator,
   DeleteItemValidator,
-} = require("../utils/ItemValid");
+} = require("../utils/Validators/ItemValid");
 
 router.post("/", CreateItemValidator, CreateItem);
 router.get("/", GetAllItems);

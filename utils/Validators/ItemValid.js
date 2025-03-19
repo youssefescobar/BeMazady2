@@ -1,6 +1,7 @@
 const { check } = require("express-validator");
-const validatorr = require("../middlewares/ValidatorMiddle");
-
+const validatorr = require("../../middlewares/ValidatorMiddle");
+const CategoryModel = require("../../models/category");
+const SubcategoryModel = require("../../models/subcategory");
 const CreateItemValidator = [
   check("title").notEmpty().withMessage("Item title is required"),
   check("item_status")
@@ -27,13 +28,30 @@ const CreateItemValidator = [
     .isString()
     .withMessage("Each item picture must be a string (URL)"),
   check("item_cover").notEmpty().withMessage("Item cover image is required"),
-  check("category").notEmpty().withMessage("Category is required"),
+  check("category")
+    .notEmpty()
+    .withMessage("Category is required")
+    .isMongoId()
+    .withMessage("Invalid category ID")
+    .custom(async (CategoryId) => {
+      const category = await CategoryModel.findById(CategoryId);
+      if (!category) {
+        throw new Error(`No Category with id: ${CategoryId}`);
+      }
+    }),
+
   check("subcategory")
     .isArray({ min: 1 })
     .withMessage("At least one subcategory is required"),
   check("subcategory.*")
-    .notEmpty()
-    .withMessage("Each subcategory must be valid"),
+    .isMongoId()
+    .withMessage("Invalid subcategory ID")
+    .custom(async (SubcategoryId) => {
+      const subcategory = await SubcategoryModel.findById(SubcategoryId);
+      if (!subcategory) {
+        throw new Error(`No Subcategory with id: ${SubcategoryId}`);
+      }
+    }),
   check("ratingsAvg")
     .optional()
     .isFloat({ min: 0, max: 5 })
