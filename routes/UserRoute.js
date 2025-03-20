@@ -1,6 +1,9 @@
 const express = require("express");
 const router = express.Router();
+const protect = require("../middlewares/AuthMiddle"); 
+const authorize = require("../middlewares/AuthorizeMiddle");
 const userController = require("../controllers/UserController");
+
 const {
   GetAllUsersValidator,
   GetUserByIdValidator,
@@ -13,26 +16,65 @@ const {
   UpdateUserRoleValidator,
 } = require("../utils/Validators/UserValid");
 
-router.get("/", GetAllUsersValidator, userController.getAllUsers);
+// Admin-only: Get all users
+router.get(
+  "/",
+  protect,
+  authorize("admin"),
+  GetAllUsersValidator,
+  userController.getAllUsers
+);
 
-// Get user by ID
-router.get("/:id", GetUserByIdValidator, userController.getUserById);
+// User & Admin: Get user by ID (users can only see their own info)
+router.get("/:id", protect, GetUserByIdValidator, userController.getUserById);
 
-// Update user
-router.put("/:id", UpdateUserValidator, userController.updateUser);
+// User & Admin: Update user (users can update their own info, admins can update any user)
+router.put("/:id", protect, UpdateUserValidator, userController.updateUser);
 
-// Delete user
-router.delete("/:id", DeleteUserValidator, userController.deleteUser);
+// Admin-only: Delete user
+router.delete(
+  "/:id",
+  protect,
+  authorize("admin"),
+  DeleteUserValidator,
+  userController.deleteUser
+);
 
-// Password update
-router.patch("/:id/password", UpdatePasswordValidator, userController.updatePassword);
+// User & Admin: Password update (users can update their own password)
+router.patch(
+  "/:id/password",
+  protect,
+  UpdatePasswordValidator,
+  userController.updatePassword
+);
 
-// Role update
-router.patch("/:id/role", UpdateUserRoleValidator, userController.updateUserRole);
+// Admin-only: Update user role
+router.patch(
+  "/:id/role",
+  protect,
+  authorize("admin"),
+  UpdateUserRoleValidator,
+  userController.updateUserRole
+);
 
-// Favorites management
-router.get("/:id/favorites", GetUserFavoritesValidator, userController.getUserFavorites);
-router.post("/:id/favorites", AddToFavoritesValidator, userController.addToFavorites);
-router.delete("/:id/favorites/:itemId", RemoveFromFavoritesValidator, userController.removeFromFavorites);
+// User & Admin: Favorites management (users can manage their own favorites)
+router.get(
+  "/:id/favorites",
+  protect,
+  GetUserFavoritesValidator,
+  userController.getUserFavorites
+);
+router.post(
+  "/:id/favorites",
+  protect,
+  AddToFavoritesValidator,
+  userController.addToFavorites
+);
+router.delete(
+  "/:id/favorites/:itemId",
+  protect,
+  RemoveFromFavoritesValidator,
+  userController.removeFromFavorites
+);
 
 module.exports = router;

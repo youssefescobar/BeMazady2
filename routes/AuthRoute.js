@@ -4,10 +4,10 @@ const {
   registerValidationRules,
   loginValidationRules,
 } = require("../utils/Validators/AuthValid");
-const { register, login } = require("../controllers/AuthController");
+const { Signup, login } = require("../controllers/AuthController");
 
 // Register route
-router.post("/register", registerValidationRules, register);
+router.post("/register", registerValidationRules, Signup);
 
 // Login route
 router.post("/login", loginValidationRules, login);

@@ -1,4 +1,8 @@
 const express = require("express");
+const router = express.Router();
+const protect = require("../middlewares/AuthMiddle"); // Ensure correct path
+const authorize = require("../middlewares/AuthorizeMiddle"); // Import authorize middleware
+
 const {
   createAuction,
   placeBid,
@@ -7,6 +11,7 @@ const {
   endAuction,
   updateAuction,
 } = require("../controllers/AuctionController");
+
 const {
   CreateAuctionValidator,
   PlaceBidValidator,
@@ -14,13 +19,33 @@ const {
   UpdateAuctionValidator,
   EndAuctionValidator,
 } = require("../utils/Validators/AuctionValid");
-const router = express.Router();
 
-router.post("/", CreateAuctionValidator, createAuction);
-router.post("/:id/bid", PlaceBidValidator, placeBid);
-router.get("/:id", GetAuctionValidator, getAuction);
-router.put("/:id", UpdateAuctionValidator, updateAuction);
+// Public: Anyone can view auctions
 router.get("/", getAllAuctions);
-router.post("/:id/end", EndAuctionValidator, endAuction);
+router.get("/:id", GetAuctionValidator, getAuction);
+
+// Protected: Only logged-in users can create auctions
+router.post("/", protect, CreateAuctionValidator, createAuction);
+
+// Protected: Only logged-in users can place bids
+router.post("/:id/bid", protect, PlaceBidValidator, placeBid);
+
+// Protected: Only auction owners or admins can update an auction
+router.put(
+  "/:id",
+  protect,
+  authorize("admin", "seller"),
+  UpdateAuctionValidator,
+  updateAuction
+);
+
+// Protected: Only admins can end an auction
+router.post(
+  "/:id/end",
+  protect,
+  authorize("admin"),
+  EndAuctionValidator,
+  endAuction
+);
 
 module.exports = router;
