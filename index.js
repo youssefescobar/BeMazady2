@@ -12,6 +12,7 @@ const SubcategoryRoute = require("./routes/SubcategoryRoutes");
 const ItemRoute = require("./routes/ItemRoutes");
 const AuthRoute = require("./routes/AuthRoute");
 const AuctionRoute = require("./routes/AuctionRoute");
+const UserRoute = require("./routes/UserRoute");
 
 // Initialize Express app
 const app = express();
@@ -29,6 +30,7 @@ app.use("/api/subcategories", SubcategoryRoute);
 app.use("/api/items", ItemRoute);
 app.use("/api/Auth", AuthRoute);
 app.use("/api/auctions", AuctionRoute);
+app.use("/api/users", UserRoute);
 
 // Handle route errors
 app.all("*", (req, res, next) => {
