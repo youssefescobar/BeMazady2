@@ -4,12 +4,19 @@ const {
   registerValidationRules,
   loginValidationRules,
 } = require("../utils/Validators/AuthValid");
-const { Signup, login } = require("../controllers/AuthController");
+const {
+  Signup,
+  login,
+  Forgotpassword,
+} = require("../controllers/AuthController");
 
 // Register route
 router.post("/register", registerValidationRules, Signup);
 
 // Login route
 router.post("/login", loginValidationRules, login);
+
+// Forgot password
+router.post("/forgotpassword", Forgotpassword);
 
 module.exports = router;

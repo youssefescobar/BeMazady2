@@ -17,6 +17,9 @@ const UserSchema = new mongoose.Schema(
     national_id: { type: Number, unique: true, required: true },
     user_picture: { type: String },
     favorite_list: [{ type: mongoose.Schema.Types.ObjectId, ref: "Item" }], // References Item collection
+    password_rest_code: String,
+    password_rest_expire: Date,
+    password_rest_verified: Boolean,
   },
   {
     timestamps: true,

@@ -1,9 +1,10 @@
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { validationResult } = require("express-validator");
+const crypto = require("crypto");
 const asyncHandler = require("express-async-handler");
 const ApiError = require("../utils/ApiError");
+const sendEmail = require("../utils/SendEmail");
 
 // sign up - Public
 const Signup = asyncHandler(async (req, res, next) => {
@@ -78,4 +79,23 @@ const login = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { Signup, login };
+// Forgot paassword
+const Forgotpassword = asyncHandler(async (req, res, next) => {
+  const user = await User.findOne({ email: req.body.email });
+  if (!user) {
+    return next(new ApiError("No user with given email", 404));
+  }
+  const resetToken = crypto.randomBytes(3).toString("hex");
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
+  console.log(resetToken);
+  console.log(hashedToken);
+  user.password_rest_code = hashedToken;
+  user.password_rest_expire = Date.now() + 10 * 60 * 1000;
+  user.password_rest_verified = false;
+  user.save();
+  next();
+});
+module.exports = { Signup, login, Forgotpassword };
