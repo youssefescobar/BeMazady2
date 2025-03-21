@@ -23,7 +23,10 @@ const messageSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
-  }
+  },
+  referenceId: {
+    type: String,
+    required: false}
 });
 
 module.exports = mongoose.model('Message', messageSchema);

@@ -17,7 +17,7 @@ exports.getConversations = async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch conversations' });
   }
-};
+}; 
 
 exports.getMessages = async (req, res) => {
   try {
@@ -46,7 +46,7 @@ exports.getMessages = async (req, res) => {
 
 exports.sendMessage = async (req, res) => {
   try {
-    const { recipientId, content } = req.body;
+    const { recipientId, content, referenceId } = req.body;
     
     if (!content || content.trim() === '') {
       return res.status(400).json({ error: 'Message content is required' });
@@ -57,11 +57,12 @@ exports.sendMessage = async (req, res) => {
       return res.status(404).json({ error: 'Recipient not found' });
     }
     
-    // Create message
+    // Create message with optional referenceId
     const message = new Message({
       sender: req.user._id,
       recipient: recipientId,
-      content
+      content,
+      referenceId // Include the referenceId if provided
     });
     
     await message.save();
@@ -103,8 +104,9 @@ exports.sendMessage = async (req, res) => {
         recipientId,
         `You have a new message from ${req.user.username}`,
         'message',
-        req.user._id,
-        message._id
+        req.user._id,  // This is likely supposed to be the senderId
+        message._id,
+        referenceId
       );
     } catch (notifError) {
       console.error('Notification error:', notifError);
