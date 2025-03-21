@@ -88,6 +88,6 @@ app.set('io', io);
 app.set('connectedUsers', connectedUsers);
 // Start server (using server.listen instead of app.listen)
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log("Online on port:", PORT);
 });
