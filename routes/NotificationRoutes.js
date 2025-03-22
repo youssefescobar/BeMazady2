@@ -1,14 +1,13 @@
-// routes/NotificationRoutes.js
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const NotificationController = require('../controllers/NotificationController');
-const { authenticateUser } = require('../middlewares/AuthMiddle');
+const NotificationController = require("../controllers/NotificationController");
+const protect = require("../middlewares/AuthMiddle"); // Ensure this is correctly named
 
-// Change this line to use createNotificationAPI instead of createNotification
-router.post('/create', authenticateUser, NotificationController.createNotificationAPI);
-router.get('/', authenticateUser, NotificationController.getUserNotifications);
-router.put('/read/:id', authenticateUser, NotificationController.markAsRead);
-router.put('/read-all', authenticateUser, NotificationController.markAllAsRead);
-router.get('/unread-count', authenticateUser, NotificationController.getUnreadCount);
+// Protect routes that require authentication
+router.post("/create", protect, NotificationController.createNotificationAPI);
+router.get("/", protect, NotificationController.getUserNotifications);
+router.put("/read/:id", protect, NotificationController.markAsRead);
+router.put("/read-all", protect, NotificationController.markAllAsRead);
+router.get("/unread-count", protect, NotificationController.getUnreadCount);
 
 module.exports = router;
