@@ -209,40 +209,44 @@ const getUserFavorites = asyncHandler(async (req, res, next) => {
 });
 // update role
 const updateUserRole = asyncHandler(async (req, res, next) => {
-    const { id } = req.params;
-    const { role } = req.body;
-    
-    // Check if user exists
-    const user = await User.findById(id);
-    if (!user) {
-      return next(new ApiError(`No user found with id: ${id}`, 404));
-    }
-  
-    // Valid role check
-    const validRoles = ["buyer", "seller", "admin"];
-    if (!validRoles.includes(role)) {
-      return next(
-        new ApiError(
-          "Invalid role. Role must be either buyer, seller, or admin",
-          400
-        )
-      );
-    }
-  
-    // Update the role
-    user.role = role;
-    await user.save();
-  
-    // Return updated user without password
-    const updatedUser = await User.findById(id).select("-password");
-  
-    res.status(200).json({
-      success: true,
-      message: "User role updated successfully",
-      data: updatedUser,
-    });
-  });
+  const { id } = req.params;
+  const { role } = req.body;
 
+  // Check if user exists
+  const user = await User.findById(id);
+  if (!user) {
+    return next(new ApiError(`No user found with id: ${id}`, 404));
+  }
+
+  // Valid role check
+  const validRoles = ["buyer", "seller", "admin"];
+  if (!validRoles.includes(role)) {
+    return next(
+      new ApiError(
+        "Invalid role. Role must be either buyer, seller, or admin",
+        400
+      )
+    );
+  }
+
+  // Update the role
+  user.role = role;
+  await user.save();
+
+  // Return updated user without password
+  const updatedUser = await User.findById(id).select("-password");
+
+  res.status(200).json({
+    success: true,
+    message: "User role updated successfully",
+    data: updatedUser,
+  });
+});
+
+const getLogged = asyncHandler(async (req, res, next) => {
+  req.params.id = req.user._id;
+  next();
+});
 module.exports = {
   getAllUsers,
   getUserById,
