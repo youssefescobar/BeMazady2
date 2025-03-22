@@ -1,35 +1,32 @@
-// In AuthMiddle.js
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const jwt = require("jsonwebtoken");
+const User = require("../models/User");
+const asyncHandler = require("express-async-handler");
+const ApiError = require("../utils/ApiError");
 
-const authenticateUser = async (req, res, next) => {
+const protect = asyncHandler(async (req, res, next) => {
+  let token;
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith("Bearer")
+  ) {
+    token = req.headers.authorization.split(" ")[1];
+  }
+  if (!token) {
+    return next(new ApiError("You are not logged in", 401));
+  }
   try {
-    // Get token from header
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-    
-    // Check if token exists
-    if (!token) {
-      return res.status(401).json({ message: 'Authentication required' });
-    }
-    
-    // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    // Find user with the id from the token
-    const user = await User.findById(decoded.userId);
-    
-    if (!user) {
-      return res.status(401).json({ message: 'Invalid authentication' });
+    req.user = await User.findById(decoded.userId).select("-password");
+    if(!req.user){
+        return next(new ApiError("No user with that Id", 401))
     }
-    
-    // Add user to request object
-    req.user = user;
-    req.userId = user._id;
-    
     next();
   } catch (error) {
-    res.status(401).json({ message: 'Invalid authentication' });
+    return res
+      .status(401)
+      .json({ success: false, message: "Not authorized, invalid token" });
   }
-};
+});
 
-module.exports = { authenticateUser };
+module.exports = protect;
+

@@ -1,5 +1,8 @@
 const express = require("express");
 const router = express.Router({ mergeParams: true });
+const protect = require("../middlewares/AuthMiddle"); // Ensure correct path
+const authorize = require("../middlewares/AuthorizeMiddle"); // Import authorize middleware
+
 const {
   CreateSubcategory,
   GetAllSubcategories,
@@ -7,6 +10,7 @@ const {
   UpdateSubcategory,
   DeleteSubcategory,
 } = require("../controllers/SubcategoryController");
+
 const {
   GetSubcategoryValidator,
   UpdateSubcategoryValidator,
@@ -14,15 +18,36 @@ const {
   CreateSubcategoryValidator,
 } = require("../utils/Validators/SubcategoryValid");
 
+// Public: Anyone can view subcategories
+router.route("/").get(GetAllSubcategories);
+
+// Protected: Only admins can create subcategories
 router
   .route("/")
-  .post(CreateSubcategoryValidator, CreateSubcategory)
-  .get(GetAllSubcategories);
+  .post(
+    protect,
+    authorize("admin"),
+    CreateSubcategoryValidator,
+    CreateSubcategory
+  );
 
+// Public: Anyone can get a specific subcategory
+router.route("/:id").get(GetSubcategoryValidator, GetSubcategory);
+
+// Protected: Only admins can update or delete subcategories
 router
   .route("/:id")
-  .get(GetSubcategoryValidator, GetSubcategory)
-  .delete(DeleteSubcategoryValidator, DeleteSubcategory)
-  .put(UpdateSubcategoryValidator, UpdateSubcategory);
+  .put(
+    protect,
+    authorize("admin"),
+    UpdateSubcategoryValidator,
+    UpdateSubcategory
+  )
+  .delete(
+    protect,
+    authorize("admin"),
+    DeleteSubcategoryValidator,
+    DeleteSubcategory
+  );
 
 module.exports = router;

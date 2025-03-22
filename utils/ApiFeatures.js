@@ -1,5 +1,3 @@
-const { modelName } = require("../models/Item");
-
 class ApiFeatures {
   constructor(query, queryString) {
     this.query = query;
@@ -14,17 +12,24 @@ class ApiFeatures {
 
     // 🔍 Search: Check both title and description
     if (this.queryString.keyword) {
-        if (Modelname === "Item") {
-          queryObj.$or = [
-            { title: { $regex: this.queryString.keyword, $options: "i" } },
-            { description: { $regex: this.queryString.keyword, $options: "i" } },
-          ];
-        } else {
-          queryObj.$or = [
-            { name: { $regex: this.queryString.keyword, $options: "i" } }
-          ];
-        }
+      if (Modelname === "Item") {
+        queryObj.$or = [
+          { title: { $regex: this.queryString.keyword, $options: "i" } },
+          { description: { $regex: this.queryString.keyword, $options: "i" } },
+        ];
       }
+      if (Modelname === "Category") {
+        queryObj.$or = [
+          { name: { $regex: this.queryString.keyword, $options: "i" } },
+        ];
+      }
+      if (Modelname === "Auction") {
+        queryObj.$or = [
+          { title: { $regex: this.queryString.keyword, $options: "i" } },
+          { description: { $regex: this.queryString.keyword, $options: "i" } },
+        ];
+      }
+    }
 
     // Price Range Filtering
     if (queryObj.minPrice || queryObj.maxPrice) {
