@@ -1,5 +1,7 @@
 const User = require("../models/User");
 const bcrypt = require("bcrypt");
+const path = require("path");
+const fs = require("fs");
 const asyncHandler = require("express-async-handler");
 const ApiError = require("../utils/ApiError");
 const ApiFeatures = require("../utils/ApiFeatures");
@@ -61,7 +63,6 @@ const updateUser = asyncHandler(async (req, res, next) => {
     address,
     phone_number,
     national_id,
-    user_picture,
   } = req.body;
 
   // Build update object with only provided fields
@@ -73,8 +74,39 @@ const updateUser = asyncHandler(async (req, res, next) => {
   if (address) updateData.address = address;
   if (phone_number) updateData.phone_number = phone_number;
   if (national_id) updateData.national_id = national_id;
-  if (user_picture) updateData.user_picture = user_picture;
   if (role) updateData.role = role;
+
+  // Handle file upload for user_picture - using the field name from the middleware
+  if (
+    req.files &&
+    req.files.user_picture &&
+    req.files.user_picture.length > 0
+  ) {
+    // Get the file path from multer
+    const userPicturePath = req.files.user_picture[0].path;
+
+    // Format the path for storage in database (using forward slashes)
+    const formattedPath = userPicturePath.replace(/\\/g, "/");
+
+    // Store the path relative to the project root
+    updateData.user_picture = formattedPath.substring(
+      formattedPath.indexOf("uploads")
+    );
+
+    // If user already has a picture, delete the old one
+    const existingUser = await User.findById(id);
+    if (existingUser && existingUser.user_picture) {
+      const oldPicturePath = path.join(
+        __dirname,
+        "..",
+        existingUser.user_picture
+      );
+      if (fs.existsSync(oldPicturePath)) {
+        fs.unlinkSync(oldPicturePath);
+        console.log(`✅ Deleted old picture: ${oldPicturePath}`);
+      }
+    }
+  }
 
   const updatedUser = await User.findByIdAndUpdate(
     id,
@@ -125,15 +157,50 @@ const updatePassword = asyncHandler(async (req, res, next) => {
 const deleteUser = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
 
-  const deletedUser = await User.findByIdAndDelete(id);
+  const user = await User.findById(id);
 
-  if (!deletedUser) {
+  if (!user) {
     return next(new ApiError(`No user found with id: ${id}`, 404));
   }
 
-  res.status(204).json({ message: "User deleted successfully" });
-});
+  if (user.user_picture) {
 
+    const absolutePath = path.join(__dirname, "..", user.user_picture);
+
+
+    if (fs.existsSync(absolutePath)) {
+      try {
+        fs.unlinkSync(absolutePath);
+        console.log(`✅ Successfully deleted user picture: ${absolutePath}`);
+      } catch (err) {
+        console.error(`❌ Error deleting file: ${err.message}`);
+      }
+    } else {
+      // If not found with the first approach, try direct path
+      const directPath = path.resolve(user.user_picture);
+
+      if (fs.existsSync(directPath)) {
+        try {
+          fs.unlinkSync(directPath);
+          console.log(
+            `✅ Successfully deleted user picture using alternate path: ${directPath}`
+          );
+        } catch (err) {
+          console.error(
+            `❌ Error deleting file with alternate path: ${err.message}`
+          );
+        }
+      } else {
+        console.log(`❌ Could not find file to delete at either path`);
+      }
+    }
+  }
+
+  // Delete the user
+  await User.findByIdAndDelete(id);
+
+  res.status(204).send();
+});
 // Add item to favorites
 const addToFavorites = asyncHandler(async (req, res, next) => {
   const { id } = req.params;

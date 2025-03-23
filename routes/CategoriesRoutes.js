@@ -2,8 +2,7 @@ const express = require("express");
 const router = express.Router();
 const protect = require("../middlewares/AuthMiddle");
 const authorize = require("../middlewares/AuthorizeMiddle");
-const upload = require("../middlewares/UploadMiddle");
-
+const uploadMiddleware = require("../middlewares/UploadMiddle");
 const {
   GetAllCategories,
   CreateCategory,
@@ -28,7 +27,7 @@ router.post(
   "/",
   protect,
   authorize("admin", "buyer"),
-  upload,
+  uploadMiddleware,
   CreateCategoryValidator,
   CreateCategory
 );
@@ -37,7 +36,7 @@ router.put(
   "/:id",
   protect,
   authorize("admin", "buyer"),
-  upload,
+  uploadMiddleware,
   UpdateCategoryValidator,
   UpdateCategory
 );

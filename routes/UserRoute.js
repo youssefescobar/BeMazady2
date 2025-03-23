@@ -1,9 +1,9 @@
 const express = require("express");
 const router = express.Router();
-const protect = require("../middlewares/AuthMiddle"); 
+const protect = require("../middlewares/AuthMiddle");
 const authorize = require("../middlewares/AuthorizeMiddle");
 const userController = require("../controllers/UserController");
-
+const uploadMiddleware = require("../middlewares/UploadMiddle");
 const {
   GetAllUsersValidator,
   GetUserByIdValidator,
@@ -29,13 +29,19 @@ router.get(
 router.get("/:id", protect, GetUserByIdValidator, userController.getUserById);
 
 // User & Admin: Update user (users can update their own info, admins can update any user)
-router.put("/:id", protect, UpdateUserValidator, userController.updateUser);
+router.put(
+  "/:id",
+  protect,
+  uploadMiddleware,
+  UpdateUserValidator,
+  userController.updateUser
+);
 
 // Admin-only: Delete user
 router.delete(
   "/:id",
   protect,
-  authorize("admin"),
+  authorize("admin","buyer"),
   DeleteUserValidator,
   userController.deleteUser
 );

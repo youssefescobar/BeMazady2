@@ -14,11 +14,24 @@ const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     try {
       let uploadDir;
-      if (file.fieldname === "category_image") {
+
+      if (file.fieldname === "categoryImage") {
         uploadDir = path.join(__dirname, "../uploads/categories");
-      } else {
+      } else if (file.fieldname === "user_picture") {
+        // Handle user picture uploads
         const userId = req.user?.id || "default";
-        uploadDir = path.join(__dirname, "../uploads", userId);
+        uploadDir = path.join(__dirname, "../uploads/users", userId);
+      } else if (
+        file.fieldname === "auctionCover" ||
+        file.fieldname === "auctionImages"
+      ) {
+        // Handle auction images
+        const userId = req.user?.id || "default";
+        uploadDir = path.join(__dirname, "../uploads/auctions", userId);
+      } else {
+        // Handle item-related uploads
+        const userId = req.user?.id || "default";
+        uploadDir = path.join(__dirname, "../uploads/items", userId);
       }
 
       checkAndCreateFolder(uploadDir);
@@ -41,16 +54,37 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Upload Middleware: Supports both category and item images
-// In multer configuration:
+// Upload Middleware: Supports category, item, and user images
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: { fileSize: 5 * 1024 * 1024 },
 }).fields([
-  { name: "categoryImage", maxCount: 1 }, // Keep this as is
+  { name: "categoryImage", maxCount: 1 },
   { name: "item_cover", maxCount: 1 },
   { name: "item_pictures", maxCount: 5 },
+  { name: "user_picture", maxCount: 1 },
+  { name: "auctionCover", maxCount: 1 },
+  { name: "auctionImages", maxCount: 5 },
 ]);
 
-module.exports = upload;
+// Error handling wrapper
+const uploadMiddleware = (req, res, next) => {
+  upload(req, res, function (err) {
+    if (err instanceof multer.MulterError) {
+      return res.status(400).json({
+        success: false,
+        message: `Upload error: ${err.message}`,
+      });
+    } else if (err) {
+      return res.status(500).json({
+        success: false,
+        message: err.message,
+      });
+    }
+    // Everything went fine
+    next();
+  });
+};
+
+module.exports = uploadMiddleware;

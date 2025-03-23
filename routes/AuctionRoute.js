@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const protect = require("../middlewares/AuthMiddle"); // Ensure correct path
 const authorize = require("../middlewares/AuthorizeMiddle"); // Import authorize middleware
-const upload = require("../middlewares/UploadMiddle"); // Import upload middleware
+const uploadMiddleware = require("../middlewares/UploadMiddle"); // Import upload middleware
 
 const {
   createAuction,
@@ -11,6 +11,7 @@ const {
   getAllAuctions,
   endAuction,
   updateAuction,
+  deleteAuction,
 } = require("../controllers/AuctionController");
 
 const {
@@ -26,7 +27,13 @@ router.get("/", getAllAuctions);
 router.get("/:id", GetAuctionValidator, getAuction);
 
 // 🟢 Protected: Only logged-in users can create auctions (With Image Upload)
-router.post("/", protect, upload, CreateAuctionValidator, createAuction);
+router.post(
+  "/",
+  protect,
+  uploadMiddleware,
+  CreateAuctionValidator,
+  createAuction
+);
 
 // 🟢 Protected: Only logged-in users can place bids
 router.post("/:id/bid", protect, PlaceBidValidator, placeBid);
@@ -35,8 +42,8 @@ router.post("/:id/bid", protect, PlaceBidValidator, placeBid);
 router.put(
   "/:id",
   protect,
-  authorize("admin", "seller"), // Ensure correct roles
-  upload, // Allow updating images
+  authorize("admin", "seller"),
+  uploadMiddleware,
   UpdateAuctionValidator,
   updateAuction
 );
@@ -49,5 +56,5 @@ router.post(
   EndAuctionValidator,
   endAuction
 );
-
+router.delete("/:id", protect, deleteAuction);
 module.exports = router;

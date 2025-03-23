@@ -15,7 +15,7 @@ const UserSchema = new mongoose.Schema(
     address: { type: String },
     phone_number: { type: Number, unique: true, required: true },
     national_id: { type: Number, unique: true, required: true },
-    user_picture: { type: String },
+    user_picture: { type: String, default: "" },
     favorite_list: [{ type: mongoose.Schema.Types.ObjectId, ref: "Item" }], // References Item collection
     password_rest_code: String,
     password_rest_expire: Date,
