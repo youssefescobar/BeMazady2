@@ -1,17 +1,33 @@
 const slugify = require("slugify");
 const asyncHandler = require("express-async-handler");
+const fs = require("fs").promises; // Add fs.promises import
 const CategoryModel = require("../models/category");
 const ApiError = require("../utils/ApiError");
 const ApiFeatures = require("../utils/ApiFeatures");
 
 // Create Category - Private
 const CreateCategory = asyncHandler(async (req, res) => {
-  const name = req.body.name;
-  const category = await CategoryModel.create({ name, slug: slugify(name) });
-  res.status(201).json({ data: category });
+  try {
+    // Extract the category image path - fix the field name to match multer config
+    const categoryImage =
+      req.files && req.files["categoryImage"] && req.files["categoryImage"][0]
+        ? req.files["categoryImage"][0].path.replace(/\\/g, "/")
+        : "";
+
+    // Create the category directly without checking for existing (handle that with unique index)
+    const newCategory = await CategoryModel.create({
+      name: req.body.name,
+      slug: slugify(req.body.name || ""), // Provide default in case name is undefined
+      categoryImage: categoryImage,
+    });
+
+    res.status(201).json({ status: "success", data: newCategory });
+  } catch (error) {
+    res.status(500).json({ status: "error", message: error.message });
+  }
 });
 
-//Get all Categories - Public
+// Get all Categories - Public
 const GetAllCategories = asyncHandler(async (req, res) => {
   let query = CategoryModel.find();
 
@@ -21,7 +37,7 @@ const GetAllCategories = asyncHandler(async (req, res) => {
     .limitFields()
     .paginate();
 
-  //  Get the total count before pagination
+  // Get the total count before pagination
   const totalCategories = await CategoryModel.countDocuments(
     features.query.getFilter()
   );
@@ -55,25 +71,77 @@ const GetCategory = asyncHandler(async (req, res, next) => {
 // Update Category by id - Private
 const UpdateCategory = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
-  const name = req.body.name;
-  const category = await CategoryModel.findOneAndUpdate(
-    { _id: id },
-    { name: name, slug: slugify(name) },
+  
+  // Find the category
+  const category = await CategoryModel.findById(id);
+  if (!category) {
+    return next(new ApiError(`No category with id: ${id}`, 404));
+  }
+
+  // Debug: Log the files received
+  console.log("Files received:", req.files);
+  
+  // Initialize update object with existing data
+  const updateData = { ...req.body };
+  
+  // Handle image update if provided
+  if (req.files && req.files["categoryImage"] && req.files["categoryImage"][0]) {
+    // Get new image path
+    const newImagePath = req.files["categoryImage"][0].path.replace(/\\/g, "/");
+    console.log("New image path:", newImagePath);
+    
+    // Delete old image if it exists
+    if (category.categoryImage) {
+      try {
+        await fs.unlink(category.categoryImage);
+        console.log("Deleted old image:", category.categoryImage);
+      } catch (error) {
+        console.error(`Failed to delete old image: ${category.categoryImage}`, error);
+      }
+    }
+    
+    // Set the new image path
+    updateData.categoryImage = newImagePath;
+  }
+  
+  // Update slug if name is provided
+  if (updateData.name) {
+    updateData.slug = slugify(updateData.name);
+  }
+  
+  console.log("Update data:", updateData);
+
+  // Update the category with the prepared data
+  const updatedCategory = await CategoryModel.findByIdAndUpdate(
+    id, 
+    updateData,
     { new: true }
   );
-  if (!category) {
-    return next(new ApiError(`No Category with id: ${id}`, 404));
-  }
-  res.status(200).json({ data: category });
+
+  res.status(200).json({ data: updatedCategory });
 });
 
+// Delete Category - Private
 const DeleteCategory = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
-  const category = await CategoryModel.findByIdAndDelete(id);
+  const category = await CategoryModel.findById(id);
   if (!category) {
-    return next(new ApiError(`No Category with id: ${id}`, 404));
+    return next(new ApiError(`No category with id: ${id}`, 404));
   }
-  res.status(204).json({ msg: "Deleted Succesfully" });
+
+  // Check for categoryImage and delete if it exists
+  if (category.categoryImage) {
+    try {
+      await fs.unlink(category.categoryImage);
+    } catch (error) {
+      // Log the error but continue with deletion
+      console.error(`Failed to delete image: ${category.categoryImage}`, error);
+    }
+  }
+
+  await CategoryModel.findByIdAndDelete(id);
+
+  res.status(204).json({ message: "Category Deleted Successfully" });
 });
 
 module.exports = {

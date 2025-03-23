@@ -29,6 +29,8 @@ const AuctionSchema = new mongoose.Schema(
     },
     featured: { type: Boolean, default: false },
     viewCount: { type: Number, default: 0 },
+    auctionCover: { type: String, required: true }, // Single cover image
+    auctionImages: [{ type: String, required: true }], // Array of images
   },
   { timestamps: true }
 ); // Adds createdAt and updatedAt fields automatically

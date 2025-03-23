@@ -1,46 +1,66 @@
 const asyncHandler = require("express-async-handler");
 const Auction = require("../models/Auction");
 const Bid = require("../models/Bid");
-
 const User = require("../models/User");
 const { createNotification } = require("../controllers/NotificationController");
+const upload = require("../middlewares/UploadMiddle");
 
 const ApiFeatures = require("../utils/ApiFeatures");
 
-
 // Create a new auction
 const createAuction = asyncHandler(async (req, res) => {
-  const {
-    item,
-    startPrice,
-    reservePrice,
-    buyNowPrice,
-    minimumBidIncrement,
-    endDate,
-  } = req.body;
-  
-  const auction = await Auction.create({
-    item,
-    seller: req.body.seller,
-    startPrice,
-    reservePrice,
-    buyNowPrice,
-    minimumBidIncrement,
-    endDate,
-    status: "active",
-  });
+  upload(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
 
-  // Notify admin about new auction creation
-  await createNotification(
-    req,
-    process.env.ADMIN_USER_ID, // Assuming you have an admin user ID in env vars
-    `New auction "${item}" has been created by seller ${req.body.seller}`,
-    'SYSTEM',
-    null,
-    { model: 'Auction', id: auction._id }
-  );
-  
-  res.status(201).json({ success: true, data: auction });
+    try {
+      const {
+        item,
+        startPrice,
+        reservePrice,
+        buyNowPrice,
+        minimumBidIncrement,
+        endDate,
+        seller,
+      } = req.body;
+
+      // Extract file paths from uploaded files
+      const itemCover = req.files["item_cover"]
+        ? req.files["item_cover"][0].path
+        : null;
+      const itemPictures = req.files["item_pictures"]
+        ? req.files["item_pictures"].map((file) => file.path)
+        : [];
+
+      const auction = await Auction.create({
+        item,
+        seller,
+        startPrice,
+        reservePrice,
+        buyNowPrice,
+        minimumBidIncrement,
+        endDate,
+        status: "active",
+        itemCover,
+        itemPictures,
+      });
+
+      // Notify admin about the new auction
+      await createNotification(
+        req,
+        process.env.ADMIN_USER_ID,
+        `New auction "${item}" has been created by seller ${seller}`,
+        "SYSTEM",
+        null,
+        { model: "Auction", id: auction._id }
+      );
+
+      res.status(201).json({ success: true, data: auction });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
 });
 
 // Place a bid on an auction
@@ -68,7 +88,7 @@ const placeBid = asyncHandler(async (req, res) => {
     bidder: req.body.bidder,
     amount,
   });
-  
+
   auction.bids.push(bid._id);
   auction.currentPrice = amount;
   await auction.save();
@@ -81,25 +101,25 @@ const placeBid = asyncHandler(async (req, res) => {
     req,
     auction.seller._id,
     `${bidder.username} placed a bid of $${amount} on your auction "${auction.item}"`,
-    'USER',
+    "USER",
     req.body.bidder,
-    { model: 'Bid', id: bid._id }
+    { model: "Bid", id: bid._id }
   );
-  
+
   // Find and notify other bidders they've been outbid
   const otherBidders = await Bid.find({
     auction: auction._id,
-    bidder: { $ne: req.body.bidder }
-  }).distinct('bidder');
-  
+    bidder: { $ne: req.body.bidder },
+  }).distinct("bidder");
+
   for (const bidderId of otherBidders) {
     await createNotification(
       req,
       bidderId,
       `Your bid on "${auction.item}" has been exceeded by a new bid of $${amount}`,
-      'SYSTEM',
+      "SYSTEM",
       null,
-      { model: 'Auction', id: auction._id }
+      { model: "Auction", id: auction._id }
     );
   }
 
@@ -124,15 +144,15 @@ const getAllAuctions = asyncHandler(async (req, res) => {
       path: "item",
       select: "title description category subcategory",
       populate: [
-        { path: "category", select: "name" }, 
-        { path: "subcategory", select: "name" }, 
+        { path: "category", select: "name" },
+        { path: "subcategory", select: "name" },
       ],
     })
     .populate({ path: "seller", select: "username email" })
     .populate({
       path: "bids",
       select: "amount bidder",
-      populate: { path: "bidder", select: "username email" }, 
+      populate: { path: "bidder", select: "username email" },
     });
 
   // Apply filtering based on category
@@ -207,7 +227,11 @@ const endAuction = asyncHandler(async (req, res) => {
   await createNotification(
     req,
     auction.seller._id,
-    `Your auction "${auction.item}" has ended${winningBidderId ? ` with a winning bid of $${winningBidAmount}` : " with no bids"}`,
+    `Your auction "${auction.item}" has ended${
+      winningBidderId
+        ? ` with a winning bid of $${winningBidAmount}`
+        : " with no bids"
+    }`,
     "SYSTEM",
     null,
     { model: "Auction", id: auction._id }
@@ -272,7 +296,7 @@ const updateAuction = asyncHandler(async (req, res) => {
     "endDate",
     "status",
   ];
-  
+
   const updates = {};
   Object.keys(req.body).forEach((key) => {
     if (allowedFields.includes(key)) {
@@ -282,50 +306,53 @@ const updateAuction = asyncHandler(async (req, res) => {
   });
 
   auction = await auction.save();
-  
+
   // If status changed to cancelled, notify bidders
   if (req.body.status === "cancelled") {
     // Notify all bidders the auction was cancelled
     const bidders = await Bid.find({
-      auction: auction._id
-    }).distinct('bidder');
-    
+      auction: auction._id,
+    }).distinct("bidder");
+
     for (const bidderId of bidders) {
       await createNotification(
         req,
         bidderId,
         `The auction "${auction.item}" has been cancelled by the seller`,
-        'SYSTEM',
+        "SYSTEM",
         null,
-        { model: 'Auction', id: auction._id }
+        { model: "Auction", id: auction._id }
       );
     }
-  } 
+  }
   // For other significant updates, notify existing bidders
   else if (Object.keys(updates).length > 0) {
     const bidders = await Bid.find({
-      auction: auction._id
-    }).distinct('bidder');
-    
+      auction: auction._id,
+    }).distinct("bidder");
+
     // Format update message based on what changed
     let updateMessage = `The auction "${auction.item}" has been updated: `;
     const updateItems = [];
-    
-    if (updates.endDate) updateItems.push(`end date changed to ${new Date(updates.endDate).toLocaleString()}`);
-    if (updates.buyNowPrice) updateItems.push(`buy now price changed to $${updates.buyNowPrice}`);
-    if (updates.minimumBidIncrement) updateItems.push(`minimum bid increment changed to $${updates.minimumBidIncrement}`);
-    
-    updateMessage += updateItems.join(', ');
-    
-    for (const bidderId of bidders) {
-      await createNotification(
-        req,
-        bidderId,
-        updateMessage,
-        'SYSTEM',
-        null,
-        { model: 'Auction', id: auction._id }
+
+    if (updates.endDate)
+      updateItems.push(
+        `end date changed to ${new Date(updates.endDate).toLocaleString()}`
       );
+    if (updates.buyNowPrice)
+      updateItems.push(`buy now price changed to $${updates.buyNowPrice}`);
+    if (updates.minimumBidIncrement)
+      updateItems.push(
+        `minimum bid increment changed to $${updates.minimumBidIncrement}`
+      );
+
+    updateMessage += updateItems.join(", ");
+
+    for (const bidderId of bidders) {
+      await createNotification(req, bidderId, updateMessage, "SYSTEM", null, {
+        model: "Auction",
+        id: auction._id,
+      });
     }
   }
 

@@ -1,7 +1,8 @@
 const express = require("express");
 const router = express.Router();
-const protect = require("../middlewares/AuthMiddle"); // Ensure correct path
-const authorize = require("../middlewares/AuthorizeMiddle"); // Import authorize middleware
+const protect = require("../middlewares/AuthMiddle");
+const authorize = require("../middlewares/AuthorizeMiddle");
+const upload = require("../middlewares/UploadMiddle");
 
 const {
   CreateItem,
@@ -18,25 +19,24 @@ const {
   DeleteItemValidator,
 } = require("../utils/Validators/ItemValid");
 
-// Public: Anyone can view items
+// Public routes
 router.get("/", GetAllItems);
 router.get("/:id", GetItemValidator, GetItem);
 
-// Protected: Only logged-in users can create items
-router.post("/", protect, CreateItemValidator, CreateItem);
-
-// Protected: Only admins can update or delete items
+// Protected routes (Require authentication)
+router.post("/", protect, upload, CreateItemValidator, CreateItem);
 router.put(
   "/:id",
   protect,
   authorize("admin"),
+  upload,
   UpdateItemValidator,
   UpdateItem
 );
 router.delete(
   "/:id",
   protect,
-  authorize("admin"),
+  authorize("admin", "seller", "buyer"),
   DeleteItemValidator,
   DeleteItem
 );

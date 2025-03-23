@@ -1,19 +1,40 @@
 const slugify = require("slugify");
 const asyncHandler = require("express-async-handler");
-const ItemModel = require("../models/Item");
+const fsPromises = require("fs/promises");
+const Item = require("../models/Item");
 const ApiFeatures = require("../utils/ApiFeatures");
 const ApiError = require("../utils/ApiError");
 
 // Create Item - Public / private
 const CreateItem = asyncHandler(async (req, res) => {
-  req.body.slug = slugify(req.body.title);
-  const item = await ItemModel.create(req.body);
-  res.status(201).json({ data: item });
+  try {
+    const itemCover = req.files["item_cover"]?.[0]?.path.replace(/\\/g, "/") || "";
+    const itemPictures = req.files["item_pictures"]?.map((file) => file.path.replace(/\\/g, "/")) || [];
+
+    const newItem = await Item.create({
+      title: req.body.title,
+      item_status: req.body.item_status,
+      description: req.body.description,
+      price: req.body.price,
+      is_featured: req.body.is_featured,
+      item_cover: itemCover,
+      item_pictures: itemPictures,
+      category: req.body.category,
+      subcategory: req.body.subcategory,
+      ratingsAvg: req.body.ratingsAvg,
+      slug: slugify(req.body.title),
+    });
+
+    res.status(201).json({ status: "success", data: newItem });
+  } catch (error) {
+    res.status(500).json({ status: "error", message: error.message });
+  }
 });
+
 
 // Get All Items - Public
 const GetAllItems = asyncHandler(async (req, res) => {
-  let query = ItemModel.find()
+  let query = Item.find()
     .populate({ path: "category", select: "name" })
     .populate({ path: "subcategory", select: "name" });
 
@@ -24,7 +45,7 @@ const GetAllItems = asyncHandler(async (req, res) => {
     .paginate();
 
   // 🛑 Get the total count before pagination
-  const totalItems = await ItemModel.countDocuments(features.query.getFilter());
+  const totalItems = await Item.countDocuments(features.query.getFilter());
 
   // Apply pagination and get the items
   const items = await features.query;
@@ -42,11 +63,10 @@ const GetAllItems = asyncHandler(async (req, res) => {
   });
 });
 
-
 // Get specific Item - Public
 const GetItem = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
-  const item = await ItemModel.findById(id)
+  const item = await Item.findById(id)
     .populate({ path: "category", select: "name" })
     .populate({ path: "subcategory", select: "name" });
 
@@ -59,26 +79,46 @@ const GetItem = asyncHandler(async (req, res, next) => {
 // Update Item by id - Private
 const UpdateItem = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
-  req.body.slug = slugify(req.body.title);
-  const item = await ItemModel.findOneAndUpdate({ _id: id }, req.body, {
-    new: true,
-  });
-
+  const item = await Item.findById(id);
   if (!item) {
     return next(new ApiError(`No item with id: ${id}`, 404));
   }
-  res.status(200).json({ data: item });
+
+  let newItemCover = item.item_cover;
+  let newItemPictures = item.item_pictures;
+
+  if (req.files) {
+    if (req.files["item_cover"]) {
+      newItemCover = req.files["item_cover"][0].path.replace(/\\/g, "/");
+      if (item.item_cover) await fsPromises.unlink(item.item_cover).catch(() => {});
+    }
+    if (req.files["item_pictures"]) {
+      newItemPictures = req.files["item_pictures"].map((file) => file.path.replace(/\\/g, "/"));
+      await Promise.all(item.item_pictures.map((pic) => fsPromises.unlink(pic).catch(() => {})));
+    }
+  }
+
+  req.body.item_cover = newItemCover;
+  req.body.item_pictures = newItemPictures;
+  req.body.slug = slugify(req.body.title);
+
+  const updatedItem = await Item.findByIdAndUpdate(id, req.body, { new: true });
+  res.status(200).json({ data: updatedItem });
 });
 
 // Delete Item - Public
 const DeleteItem = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
-  const item = await ItemModel.findByIdAndDelete(id);
-
+  const item = await Item.findById(id);
   if (!item) {
     return next(new ApiError(`No item with id: ${id}`, 404));
   }
-  res.status(204).json({ msg: "Item Deleted Successfully" });
+
+  if (item.item_cover) await fsPromises.unlink(item.item_cover).catch(() => {});
+  await Promise.all(item.item_pictures.map((pic) => fsPromises.unlink(pic).catch(() => {})));
+  await Item.findByIdAndDelete(id);
+
+  res.status(204).json({ message: "Item Deleted Successfully" });
 });
 
 module.exports = {

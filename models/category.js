@@ -6,18 +6,20 @@ const CategorySchema = mongoose.Schema(
       type: String,
       required: true,
       unique: true,
+      trim: true, // Trim spaces
     },
     slug: {
       type: String,
       lowercase: true,
+      unique: true,
     },
-    image: {
+    categoryImage: {
       type: String,
+      default: "",
     },
   },
   { timestamps: true }
 );
 
 const CategoryModel = mongoose.model("Category", CategorySchema);
-
 module.exports = CategoryModel;

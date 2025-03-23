@@ -1,17 +1,8 @@
 const express = require("express");
 const router = express.Router();
-const protect = require("../middlewares/AuthMiddle"); // Ensure correct path
-const SubcategoryRoute = require("../routes/SubcategoryRoutes");
+const protect = require("../middlewares/AuthMiddle");
 const authorize = require("../middlewares/AuthorizeMiddle");
-// Nested route for subcategories
-router.use("/:categoryId/Subcategories", SubcategoryRoute);
-
-const {
-  GetCategoryValidator,
-  UpdateCategoryValidator,
-  DeleteCategoryValidator,
-  CreateCategoryValidator,
-} = require("../utils/Validators/CategoryValid");
+const upload = require("../middlewares/UploadMiddle");
 
 const {
   GetAllCategories,
@@ -21,18 +12,42 @@ const {
   DeleteCategory,
 } = require("../controllers/CategoryController");
 
-// Public route: Anyone can get categories
-router.route("/").get(GetAllCategories);
+const {
+  GetCategoryValidator,
+  UpdateCategoryValidator,
+  DeleteCategoryValidator,
+  CreateCategoryValidator,
+} = require("../utils/Validators/CategoryValid");
 
-// Protected routes: Only authenticated users can create, update, and delete categories
-router
-  .route("/")
-  .post(protect, authorize("admin"), CreateCategoryValidator, CreateCategory);
+// Public Routes
+router.get("/", GetAllCategories);
+router.get("/:id", GetCategoryValidator, GetCategory);
 
-router
-  .route("/:id")
-  .get(GetCategoryValidator, GetCategory) // Public
-  .put(protect, authorize("admin"), UpdateCategoryValidator, UpdateCategory) // Protected
-  .delete(protect, authorize("admin"), DeleteCategoryValidator, DeleteCategory); // Protected
+// Private Admin Routes
+router.post(
+  "/",
+  protect,
+  authorize("admin", "buyer"),
+  upload,
+  CreateCategoryValidator,
+  CreateCategory
+);
+
+router.put(
+  "/:id",
+  protect,
+  authorize("admin", "buyer"),
+  upload,
+  UpdateCategoryValidator,
+  UpdateCategory
+);
+
+router.delete(
+  "/:id",
+  protect,
+  authorize("admin", "buyer"),
+  DeleteCategoryValidator,
+  DeleteCategory
+);
 
 module.exports = router;

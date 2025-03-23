@@ -4,12 +4,15 @@ const CategoryModel = require("../../models/category");
 const SubcategoryModel = require("../../models/subcategory");
 const CreateItemValidator = [
   check("title").notEmpty().withMessage("Item title is required"),
+
   check("item_status")
     .notEmpty()
     .withMessage("Item status is required")
     .isIn(["available", "sold", "pending"])
     .withMessage("Invalid item status"),
+
   check("description").notEmpty().withMessage("Item description is required"),
+
   check("price")
     .notEmpty()
     .withMessage("Price is required")
@@ -17,17 +20,25 @@ const CreateItemValidator = [
     .withMessage("Price must be a number")
     .isFloat({ min: 0 })
     .withMessage("Price must be a positive number"),
-  check("is_featured")
-    .optional()
-    .isBoolean()
-    .withMessage("Featured status must be a boolean"),
-  check("item_pictures")
-    .isArray({ min: 1 })
-    .withMessage("At least one item picture is required"),
-  check("item_pictures.*")
-    .isString()
-    .withMessage("Each item picture must be a string (URL)"),
-  check("item_cover").notEmpty().withMessage("Item cover image is required"),
+
+  check("is_featured").optional().isBoolean().withMessage("Must be a boolean"),
+
+  // Validate item_pictures (accepts both file uploads & URLs)
+  check("item_pictures").custom((value, { req }) => {
+    if (!req.files?.item_pictures && (!value || value.length === 0)) {
+      throw new Error("At least one item picture is required");
+    }
+    return true;
+  }),
+
+  // Validate item_cover (accepts both file uploads & URLs)
+  check("item_cover").custom((value, { req }) => {
+    if (!req.files?.item_cover && !value) {
+      throw new Error("Item cover image is required");
+    }
+    return true;
+  }),
+
   check("category")
     .notEmpty()
     .withMessage("Category is required")
@@ -41,8 +52,10 @@ const CreateItemValidator = [
     }),
 
   check("subcategory")
+    .optional()
     .isArray({ min: 1 })
     .withMessage("At least one subcategory is required"),
+
   check("subcategory.*")
     .isMongoId()
     .withMessage("Invalid subcategory ID")
@@ -52,26 +65,52 @@ const CreateItemValidator = [
         throw new Error(`No Subcategory with id: ${SubcategoryId}`);
       }
     }),
+
   check("ratingsAvg")
     .optional()
     .isFloat({ min: 0, max: 5 })
     .withMessage("Ratings average must be between 0 and 5"),
+
   validatorr,
 ];
 
 const UpdateItemValidator = [
   check("title").optional().trim(),
+
   check("item_status").optional().isIn(["available", "sold", "pending"]),
+
   check("description").optional().trim(),
+
   check("price").optional().isFloat({ min: 0 }),
+
   check("is_featured").optional().isBoolean(),
-  check("item_pictures").optional().isArray(),
-  check("item_pictures.*").optional().isString(),
-  check("item_cover").optional().isString(),
+
+  check("item_pictures")
+    .optional()
+    .custom((value, { req }) => {
+      if (!req.files?.item_pictures && value && !Array.isArray(value)) {
+        throw new Error("Invalid format for item pictures");
+      }
+      return true;
+    }),
+
+  check("item_cover")
+    .optional()
+    .custom((value, { req }) => {
+      if (!req.files?.item_cover && value && typeof value !== "string") {
+        throw new Error("Invalid format for item cover");
+      }
+      return true;
+    }),
+
   check("category").optional().isMongoId(),
+
   check("subcategory").optional().isArray(),
+
   check("subcategory.*").optional().isMongoId(),
+
   check("ratingsAvg").optional().isFloat({ min: 0, max: 5 }),
+
   validatorr,
 ];
 
