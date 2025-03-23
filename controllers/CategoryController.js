@@ -71,49 +71,49 @@ const GetCategory = asyncHandler(async (req, res, next) => {
 // Update Category by id - Private
 const UpdateCategory = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
-  
+
   // Find the category
   const category = await CategoryModel.findById(id);
   if (!category) {
     return next(new ApiError(`No category with id: ${id}`, 404));
   }
 
-  // Debug: Log the files received
-  console.log("Files received:", req.files);
-  
   // Initialize update object with existing data
   const updateData = { ...req.body };
-  
+
   // Handle image update if provided
-  if (req.files && req.files["categoryImage"] && req.files["categoryImage"][0]) {
+  if (
+    req.files &&
+    req.files["categoryImage"] &&
+    req.files["categoryImage"][0]
+  ) {
     // Get new image path
     const newImagePath = req.files["categoryImage"][0].path.replace(/\\/g, "/");
-    console.log("New image path:", newImagePath);
-    
+
     // Delete old image if it exists
     if (category.categoryImage) {
       try {
         await fs.unlink(category.categoryImage);
-        console.log("Deleted old image:", category.categoryImage);
       } catch (error) {
-        console.error(`Failed to delete old image: ${category.categoryImage}`, error);
+        console.error(
+          `Failed to delete old image: ${category.categoryImage}`,
+          error
+        );
       }
     }
-    
+
     // Set the new image path
     updateData.categoryImage = newImagePath;
   }
-  
+
   // Update slug if name is provided
   if (updateData.name) {
     updateData.slug = slugify(updateData.name);
   }
-  
-  console.log("Update data:", updateData);
 
   // Update the category with the prepared data
   const updatedCategory = await CategoryModel.findByIdAndUpdate(
-    id, 
+    id,
     updateData,
     { new: true }
   );
