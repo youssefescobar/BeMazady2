@@ -1,0 +1,14 @@
+Feel free to update / leave notes.
+
+Todo:
+1. Socket for irl
+2. Ai (recommendation , img , nlp)
+3. reverse auction
+4. Reviews
+5. Analytics
+6. Payment integration
+
+IfPossible:
+1. check all endpoint to see if i missed something
+2. google register and login
+3. poppulate the dbs

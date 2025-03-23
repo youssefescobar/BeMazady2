@@ -2,9 +2,9 @@ require("dotenv").config();
 const mongoose = require("mongoose");
 const faker = require("@faker-js/faker").faker;
 const slugify = require("slugify"); // ✅ Import slugify
-const Category = require("./models/category");
-const Subcategory = require("./models/subcategory");
-const Item = require("./models/Item");
+const Category = require("../models/category");
+const Subcategory = require("../models/subcategory");
+const Item = require("../models/Item");
 
 // Connect to MongoDB
 const connectDB = async () => {
