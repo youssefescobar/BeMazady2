@@ -18,7 +18,7 @@ const protect = asyncHandler(async (req, res, next) => {
       return next(new ApiError("No user with that ID", 401));
     }
 
-    req.userId = req.user._id; // Keep this from Version 1
+    req.userId = req.user._id; 
     next();
   } catch (error) {
     return next(new ApiError("Not authorized, invalid token", 401));

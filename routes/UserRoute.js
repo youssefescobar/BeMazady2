@@ -25,6 +25,12 @@ router.get(
   userController.getAllUsers
 );
 
+router.get(
+  "/Myprofile",
+  protect,
+  userController.getLoggedUser,
+  userController.getUserById
+);
 // User & Admin: Get user by ID (users can only see their own info)
 router.get("/:id", protect, GetUserByIdValidator, userController.getUserById);
 
@@ -41,7 +47,7 @@ router.put(
 router.delete(
   "/:id",
   protect,
-  authorize("admin","buyer"),
+  authorize("admin", "buyer"),
   DeleteUserValidator,
   userController.deleteUser
 );

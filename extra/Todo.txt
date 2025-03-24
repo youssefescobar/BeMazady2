@@ -7,6 +7,7 @@ Todo:
 4. Reviews
 5. Analytics
 6. Payment integration
+7. user interaction model for recommendation system
 
 IfPossible:
 1. check all endpoint to see if i missed something

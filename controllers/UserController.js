@@ -2,9 +2,11 @@ const User = require("../models/User");
 const bcrypt = require("bcrypt");
 const path = require("path");
 const fs = require("fs");
+const jwt = require("jsonwebtoken");
 const asyncHandler = require("express-async-handler");
 const ApiError = require("../utils/ApiError");
 const ApiFeatures = require("../utils/ApiFeatures");
+
 const getAllUsers = asyncHandler(async (req, res, next) => {
   let query = User.find().select("-password");
 
@@ -164,9 +166,7 @@ const deleteUser = asyncHandler(async (req, res, next) => {
   }
 
   if (user.user_picture) {
-
     const absolutePath = path.join(__dirname, "..", user.user_picture);
-
 
     if (fs.existsSync(absolutePath)) {
       try {
@@ -310,10 +310,12 @@ const updateUserRole = asyncHandler(async (req, res, next) => {
   });
 });
 
-const getLogged = asyncHandler(async (req, res, next) => {
+const getLoggedUser = asyncHandler(async (req, res, next) => {
   req.params.id = req.user._id;
   next();
 });
+
+
 module.exports = {
   getAllUsers,
   getUserById,
@@ -324,4 +326,6 @@ module.exports = {
   removeFromFavorites,
   getUserFavorites,
   updateUserRole,
+  getLoggedUser,
+  
 };
