@@ -1,15 +1,21 @@
 const slugify = require("slugify");
 const asyncHandler = require("express-async-handler");
 const fsPromises = require("fs/promises");
+const mongoose = require("mongoose");
 const Item = require("../models/Item");
 const ApiFeatures = require("../utils/ApiFeatures");
 const ApiError = require("../utils/ApiError");
+const User = require("../models/User");
 
 // Create Item - Public / private
 const CreateItem = asyncHandler(async (req, res) => {
   try {
-    const itemCover = req.files["item_cover"]?.[0]?.path.replace(/\\/g, "/") || "";
-    const itemPictures = req.files["item_pictures"]?.map((file) => file.path.replace(/\\/g, "/")) || [];
+    const itemCover =
+      req.files["item_cover"]?.[0]?.path.replace(/\\/g, "/") || "";
+    const itemPictures =
+      req.files["item_pictures"]?.map((file) =>
+        file.path.replace(/\\/g, "/")
+      ) || [];
 
     const newItem = await Item.create({
       title: req.body.title,
@@ -30,7 +36,6 @@ const CreateItem = asyncHandler(async (req, res) => {
     res.status(500).json({ status: "error", message: error.message });
   }
 });
-
 
 // Get All Items - Public
 const GetAllItems = asyncHandler(async (req, res) => {
@@ -90,11 +95,16 @@ const UpdateItem = asyncHandler(async (req, res, next) => {
   if (req.files) {
     if (req.files["item_cover"]) {
       newItemCover = req.files["item_cover"][0].path.replace(/\\/g, "/");
-      if (item.item_cover) await fsPromises.unlink(item.item_cover).catch(() => {});
+      if (item.item_cover)
+        await fsPromises.unlink(item.item_cover).catch(() => {});
     }
     if (req.files["item_pictures"]) {
-      newItemPictures = req.files["item_pictures"].map((file) => file.path.replace(/\\/g, "/"));
-      await Promise.all(item.item_pictures.map((pic) => fsPromises.unlink(pic).catch(() => {})));
+      newItemPictures = req.files["item_pictures"].map((file) =>
+        file.path.replace(/\\/g, "/")
+      );
+      await Promise.all(
+        item.item_pictures.map((pic) => fsPromises.unlink(pic).catch(() => {}))
+      );
     }
   }
 
@@ -115,16 +125,131 @@ const DeleteItem = asyncHandler(async (req, res, next) => {
   }
 
   if (item.item_cover) await fsPromises.unlink(item.item_cover).catch(() => {});
-  await Promise.all(item.item_pictures.map((pic) => fsPromises.unlink(pic).catch(() => {})));
+  await Promise.all(
+    item.item_pictures.map((pic) => fsPromises.unlink(pic).catch(() => {}))
+  );
   await Item.findByIdAndDelete(id);
 
   res.status(204).json({ message: "Item Deleted Successfully" });
 });
 
+const AddReview = asyncHandler(async (req, res) => {
+  
+});
+
+const EditReview = asyncHandler(async (req, res, next) => {
+  // Add defensive checks for userId
+  if (!req.userId) {
+    return next(new ApiError("User authentication failed", 401));
+  }
+
+  const { id } = req.params;
+  const { rating, comment } = req.body;
+
+  // Validate input
+  if (!rating || !comment) {
+    return next(new ApiError("Rating and comment are required", 400));
+  }
+
+  const item = await Item.findById(id);
+  if (!item) {
+    return next(new ApiError("Item not found", 404));
+  }
+
+  // Safer finding of review index
+  const reviewIndex = item.reviews.findIndex(
+    (review) =>
+      review.user &&
+      review.user.id &&
+      review.user.id.toString() === req.userId.toString()
+  );
+
+  if (reviewIndex === -1) {
+    return next(new ApiError("Review not found", 404));
+  }
+
+  // Update review
+  item.reviews[reviewIndex].rating = rating;
+  item.reviews[reviewIndex].comment = comment;
+
+  // Recalculate ratingsAvg
+  const totalRating = item.reviews.reduce(
+    (acc, review) => acc + review.rating,
+    0
+  );
+  item.ratingsAvg = totalRating / item.reviews.length;
+
+  await item.save();
+  res.status(200).json({
+    message: "Review updated successfully",
+    data: {
+      item: item,
+      review: item.reviews[reviewIndex],
+    },
+  });
+});
+
+const DeleteReview = asyncHandler(async (req, res, next) => {
+  // Add defensive checks for userId
+  if (!req.userId) {
+    return next(new ApiError("User authentication failed", 401));
+  }
+
+  const { id } = req.params;
+
+  const item = await Item.findById(id);
+  if (!item) {
+    return next(new ApiError("Item not found", 404));
+  }
+
+  // Safer finding of review index
+  const reviewIndex = item.reviews.findIndex(
+    (review) =>
+      review.user &&
+      review.user.id &&
+      review.user.id.toString() === req.userId.toString()
+  );
+
+  if (reviewIndex === -1) {
+    return next(new ApiError("Review not found", 404));
+  }
+
+  // Remove the review
+  item.reviews.splice(reviewIndex, 1);
+
+  // Recalculate ratingsAvg
+  const totalRating = item.reviews.reduce(
+    (acc, review) => acc + review.rating,
+    0
+  );
+  item.ratingsAvg =
+    item.reviews.length > 0 ? totalRating / item.reviews.length : 0;
+
+  await item.save();
+  res.status(200).json({
+    message: "Review deleted successfully",
+    data: item,
+  });
+});
+
+const GetReviews = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+
+  const item = await Item.findById(id).select("reviews");
+  if (!item) {
+    return next(new ApiError(`No item found with ID: ${id}`, 404));
+  }
+
+  res.status(200).json({ data: item.reviews });
+});
 module.exports = {
   CreateItem,
   GetAllItems,
   GetItem,
   DeleteItem,
   UpdateItem,
+  AddReview,
+  EditReview,
+  DeleteReview,
+  GetReviews,
 };

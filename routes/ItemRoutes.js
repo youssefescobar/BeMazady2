@@ -10,6 +10,10 @@ const {
   GetItem,
   DeleteItem,
   UpdateItem,
+  AddReview,
+  EditReview,
+  DeleteReview,
+  GetReviews,
 } = require("../controllers/ItemController");
 
 const {
@@ -40,5 +44,11 @@ router.delete(
   DeleteItemValidator,
   DeleteItem
 );
+
+// Review routes (Public for now, you can later add `protect` to restrict them)
+router.post("/:id/reviews", protect, AddReview);
+router.put("/:id/reviews", protect, EditReview);
+router.delete("/:id/reviews", protect, DeleteReview);
+router.get("/:id/reviews", GetReviews);
 
 module.exports = router;

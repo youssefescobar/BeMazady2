@@ -1,6 +1,19 @@
 const mongoose = require("mongoose");
 const slugify = require("slugify");
 
+const ReviewSchema = new mongoose.Schema(
+  {
+    user: {
+      id: { type: mongoose.Schema.ObjectId, ref: "User", required: true },
+      username: { type: String, required: true }, // Store the actual username
+    },
+    rating: { type: Number, min: 1, max: 5, required: true },
+    comment: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { _id: false } // Prevent auto-generating an _id for subdocuments
+);
+
 const ItemSchema = new mongoose.Schema(
   {
     title: { type: String, required: [true, "Title is required"], trim: true },
@@ -31,7 +44,6 @@ const ItemSchema = new mongoose.Schema(
 
     item_pictures: [{ type: String, default: [] }],
 
-
     item_cover: { type: String, default: "" },
 
     category: {
@@ -53,7 +65,7 @@ const ItemSchema = new mongoose.Schema(
       min: 0,
       max: 5,
     },
-
+    reviews: [ReviewSchema],
     slug: {
       type: String,
       required: true,
