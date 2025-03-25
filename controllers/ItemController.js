@@ -134,11 +134,56 @@ const DeleteItem = asyncHandler(async (req, res, next) => {
 });
 
 const AddReview = asyncHandler(async (req, res) => {
-  
+  console.log("Received itemId:", req.params.id);
+
+  // Validate ObjectId format
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res
+      .status(400)
+      .json({ message: "Invalid item ID format", id: req.params.id });
+  }
+
+  const user = await User.findById(req.userId);
+  if (!user) {
+    return res.status(404).json({ message: "User not found" });
+  }
+
+  const item = await Item.findById(req.params.id);
+  if (!item) {
+    return res.status(404).json({ message: "Item not found" });
+  }
+
+  const { rating, comment } = req.body;
+  if (!rating || rating < 1 || rating > 5) {
+    return res.status(400).json({ message: "Rating must be between 1 and 5" });
+  }
+
+  const existingReview = item.reviews.find(
+    (review) => review.user.username === user.username
+  );
+
+  if (existingReview) {
+    return res
+      .status(400)
+      .json({ message: "You have already reviewed this item" });
+  }
+
+  const newReview = {
+    user: { username: user.username },
+    rating: rating,
+    comment,
+  };
+
+  item.reviews.push(newReview);
+  item.ratingsAvg =
+    item.reviews.reduce((acc, r) => acc + r.rating, 0) / item.reviews.length;
+
+  await item.save();
+
+  res.status(201).json({ message: "Review added", review: newReview });
 });
 
 const EditReview = asyncHandler(async (req, res, next) => {
-  // Add defensive checks for userId
   if (!req.userId) {
     return next(new ApiError("User authentication failed", 401));
   }
@@ -146,7 +191,6 @@ const EditReview = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
   const { rating, comment } = req.body;
 
-  // Validate input
   if (!rating || !comment) {
     return next(new ApiError("Rating and comment are required", 400));
   }
@@ -156,12 +200,9 @@ const EditReview = asyncHandler(async (req, res, next) => {
     return next(new ApiError("Item not found", 404));
   }
 
-  // Safer finding of review index
+  // Find review by username
   const reviewIndex = item.reviews.findIndex(
-    (review) =>
-      review.user &&
-      review.user.id &&
-      review.user.id.toString() === req.userId.toString()
+    (review) => review.user.username === req.user.username
   );
 
   if (reviewIndex === -1) {
@@ -173,24 +214,17 @@ const EditReview = asyncHandler(async (req, res, next) => {
   item.reviews[reviewIndex].comment = comment;
 
   // Recalculate ratingsAvg
-  const totalRating = item.reviews.reduce(
-    (acc, review) => acc + review.rating,
-    0
-  );
-  item.ratingsAvg = totalRating / item.reviews.length;
+  item.ratingsAvg =
+    item.reviews.reduce((acc, r) => acc + r.rating, 0) / item.reviews.length;
 
   await item.save();
   res.status(200).json({
     message: "Review updated successfully",
-    data: {
-      item: item,
-      review: item.reviews[reviewIndex],
-    },
+    review: item.reviews[reviewIndex],
   });
 });
 
 const DeleteReview = asyncHandler(async (req, res, next) => {
-  // Add defensive checks for userId
   if (!req.userId) {
     return next(new ApiError("User authentication failed", 401));
   }
@@ -202,12 +236,9 @@ const DeleteReview = asyncHandler(async (req, res, next) => {
     return next(new ApiError("Item not found", 404));
   }
 
-  // Safer finding of review index
+  // Find review by username
   const reviewIndex = item.reviews.findIndex(
-    (review) =>
-      review.user &&
-      review.user.id &&
-      review.user.id.toString() === req.userId.toString()
+    (review) => review.user.username === req.user.username
   );
 
   if (reviewIndex === -1) {
@@ -218,17 +249,14 @@ const DeleteReview = asyncHandler(async (req, res, next) => {
   item.reviews.splice(reviewIndex, 1);
 
   // Recalculate ratingsAvg
-  const totalRating = item.reviews.reduce(
-    (acc, review) => acc + review.rating,
-    0
-  );
   item.ratingsAvg =
-    item.reviews.length > 0 ? totalRating / item.reviews.length : 0;
+    item.reviews.length > 0
+      ? item.reviews.reduce((acc, r) => acc + r.rating, 0) / item.reviews.length
+      : 0;
 
   await item.save();
   res.status(200).json({
     message: "Review deleted successfully",
-    data: item,
   });
 });
 
