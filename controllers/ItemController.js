@@ -134,8 +134,7 @@ const DeleteItem = asyncHandler(async (req, res, next) => {
 });
 
 const AddReview = asyncHandler(async (req, res) => {
-  console.log("Received itemId:", req.params.id);
-
+  
   // Validate ObjectId format
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res
