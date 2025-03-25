@@ -4,12 +4,12 @@ Todo:
 1. Socket for irl
 2. Ai (recommendation , img , nlp)
 3. reverse auction
-4. Reviews
-5. Analytics
-6. Payment integration
-7. user interaction model for recommendation system
+
+4. Analytics
+5. Payment integration
+6. user interaction model for recommendation system
 
 IfPossible:
 1. check all endpoint to see if i missed something
 2. google register and login
-3. poppulate the dbs
+3. poppulate the dbs using the seed.js, (update the seed.js)
