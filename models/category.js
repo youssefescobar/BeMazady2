@@ -11,7 +11,7 @@ const CategorySchema = mongoose.Schema(
     slug: {
       type: String,
       lowercase: true,
-      unique: true,
+      unique: false,
     },
     categoryImage: {
       type: String,

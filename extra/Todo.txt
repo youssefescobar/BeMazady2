@@ -8,8 +8,8 @@ Todo:
 4. Analytics
 5. Payment integration
 6. user interaction model for recommendation system
-
+7. handle transactions
 IfPossible:
 1. check all endpoint to see if i missed something
 2. google register and login
-3. poppulate the dbs using the seed.js, (update the seed.js)
+
