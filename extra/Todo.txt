@@ -9,6 +9,7 @@ Todo:
 5. Payment integration
 6. user interaction model for recommendation system
 7. handle transactions
+8. add items, cat, sub with imgs 
 IfPossible:
 1. check all endpoint to see if i missed something
 2. google register and login
