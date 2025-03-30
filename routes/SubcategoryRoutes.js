@@ -26,7 +26,7 @@ router
   .route("/")
   .post(
     protect,
-    authorize("admin"),
+    authorize("admin", "buyer"),
     CreateSubcategoryValidator,
     CreateSubcategory
   );

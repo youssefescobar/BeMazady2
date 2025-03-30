@@ -18,6 +18,7 @@ const AuthRoute = require("./routes/AuthRoute");
 const AuctionRoute = require("./routes/AuctionRoute");
 const UserRoute = require("./routes/UserRoute");
 const recommendationRoutes = require("./routes/RecommendRoute");
+const CartRoutes = require("./routes/CartRoute");
 // Initialize Express app
 const app = express();
 const server = http.createServer(app);
@@ -35,7 +36,7 @@ app.use("/api/subcategories", SubcategoryRoute);
 app.use("/api/items", ItemRoute);
 app.use("/api/Auth", AuthRoute);
 app.use("/api/auctions", AuctionRoute);
-
+app.use("/api/cart", CartRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/users", UserRoute);
