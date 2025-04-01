@@ -4,6 +4,17 @@ const protect = require("../middlewares/AuthMiddle");
 const authorize = require("../middlewares/AuthorizeMiddle");
 const upload = require("../middlewares/UploadMiddle");
 
+/**
+ * @swagger
+ * /items:
+ *   get:
+ *     summary: Get all items
+ *     description: Retrieve a list of all auction items.
+ *     responses:
+ *       200:
+ *         description: List of items
+ */
+
 const {
   CreateItem,
   GetAllItems,

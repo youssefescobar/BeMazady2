@@ -1,8 +1,8 @@
 const express = require("express");
 const dotenv = require("dotenv").config();
 const morgan = require("morgan");
-const http = require("http"); // Add this for Socket.IO
-const jwt = require("jsonwebtoken"); // Add this for JWT authentication
+const http = require("http"); // For Socket.IO
+const jwt = require("jsonwebtoken"); 
 const socketIo = require("socket.io");
 const mongoose = require("mongoose");
 
@@ -11,6 +11,7 @@ const messageRoutes = require("./routes/MessageRoutes");
 const globalhandel = require("./middlewares/ErrorMiddle");
 const ApiError = require("./utils/ApiError");
 const dbConnect = require("./config/dbConnection");
+const setupSwagger = require("./config/swagger"); 
 const CategoryRoute = require("./routes/CategoriesRoutes");
 const SubcategoryRoute = require("./routes/SubcategoryRoutes");
 const ItemRoute = require("./routes/ItemRoutes");
@@ -19,16 +20,21 @@ const AuctionRoute = require("./routes/AuctionRoute");
 const UserRoute = require("./routes/UserRoute");
 const recommendationRoutes = require("./routes/RecommendRoute");
 const CartRoutes = require("./routes/CartRoute");
+
 // Initialize Express app
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
+
 // Connect to database
 dbConnect();
 
 // Middleware
 app.use(express.json());
 app.use(morgan("dev"));
+
+// Set up Swagger
+setupSwagger(app); 
 
 // API Routes
 app.use("/api/categories", CategoryRoute);
@@ -40,11 +46,11 @@ app.use("/api/cart", CartRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/users", UserRoute);
-
 app.use("/api/recommendations", recommendationRoutes);
+
 // Handle route errors
 app.all("*", (req, res, next) => {
-  next(new ApiError(`Cant find this route:, ${req.originalUrl}`, 400));
+  next(new ApiError(`Can't find this route: ${req.originalUrl}`, 400));
 });
 
 // Handle express errors
@@ -52,7 +58,7 @@ app.use(globalhandel);
 
 // Handle non-express errors
 process.on("unhandledRejection", (err) => {
-  console.log(`UnhandledRejection error: ${err}`);
+  console.error(`UnhandledRejection error: ${err}`);
   process.exit(1);
 });
 
@@ -70,7 +76,7 @@ io.on("connection", (socket) => {
 
     // Broadcast user's online status
     socket.broadcast.emit("user_status_changed", {
-      userId: userId,
+      userId,
       status: "online",
     });
   });
@@ -89,11 +95,14 @@ io.on("connection", (socket) => {
     }
   });
 });
+
 // Make io accessible to our routes
 app.set("io", io);
 app.set("connectedUsers", connectedUsers);
-// Start server (using server.listen instead of app.listen)
+
+// Start server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log("Online on port:", PORT);
+  console.log(`Online on port: ${PORT}`);
+  console.log(`Swagger Docs available at http://localhost:${PORT}/api-docs`);
 });
