@@ -1,14 +1,29 @@
 Feel free to update / leave notes.
 
 Todo:
+
 1. Socket for irl
+
+
 2. Ai (recommendation , img , nlp)
-3. reverse auction
-4. Analytics
-5. Payment integration
+3. reverse auction 
+4. Analytics -
+5. Payment integration, orders +
 6. user interaction model for recommendation system
-7. handle transactions
-8. add items, cat, sub with imgs 
+7. handle transactions +
+
+8. add items, cat, sub with imgs +
+
+
+not important:
+1. coupouns
+2. discounts from seller
+
+
+
+
+
+
 IfPossible:
 1. check all endpoint to see if i missed something
 2. google register and login

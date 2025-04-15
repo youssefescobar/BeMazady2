@@ -3,7 +3,7 @@ const router = express.Router();
 const protect = require("../middlewares/AuthMiddle"); // Ensure correct path
 const authorize = require("../middlewares/AuthorizeMiddle"); // Import authorize middleware
 const uploadMiddleware = require("../middlewares/UploadMiddle"); // Import upload middleware
-
+const asyncHandler = require("express-async-handler");
 const {
   createAuction,
   placeBid,
@@ -57,4 +57,10 @@ router.post(
   endAuction
 );
 router.delete("/:id", protect, deleteAuction);
+
+router.post('/process-expired', asyncHandler(async (req, res) => {
+  const { endExpiredAuctions } = require('../services/scheduledTasks');
+  await endExpiredAuctions();
+  res.status(200).json({ message: 'Expired auctions processed successfully' });
+}));
 module.exports = router;

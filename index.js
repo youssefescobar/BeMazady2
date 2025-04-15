@@ -6,6 +6,7 @@ const jwt = require("jsonwebtoken");
 const socketIo = require("socket.io");
 const mongoose = require("mongoose");
 
+const { initScheduledTasks } = require('./services/scheduledTasks');
 const notificationRoutes = require("./routes/NotificationRoutes");
 const messageRoutes = require("./routes/MessageRoutes");
 const globalhandel = require("./middlewares/ErrorMiddle");
@@ -104,5 +105,7 @@ app.set("connectedUsers", connectedUsers);
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Online on port: ${PORT}`);
+  initScheduledTasks(app);
+  console.log("Scheduled tasks initialized");
   console.log(`Swagger Docs available at http://localhost:${PORT}/api-docs`);
 });

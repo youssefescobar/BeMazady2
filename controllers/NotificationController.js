@@ -2,24 +2,25 @@
 const Notification = require('../models/Notification');
 
 // For direct calls from other controllers
+// Modify the createNotification function in NotificationController.js
 exports.createNotification = async (req, recipientId, message, type, senderId, relatedItemId, referenceId) => {
   try {
-    // Now using senderId parameter directly instead of trying to access an undefined variable
     const notification = new Notification({
       recipient: recipientId,
       message: message,
       type: type,
-      sender: senderId,        // Make sure this matches what you're passing
+      sender: senderId,
       relatedItem: relatedItemId,
-      referenceId: referenceId  // Add the reference ID
+      referenceId: referenceId
     });
     await notification.save();
     
     // Send real-time notification if user is online
-    const io = req.app.get('io');
-    const connectedUsers = req.app.get('connectedUsers');
+    // Check if req is a valid object with app property
+    const io = req && req.app ? req.app.get('io') : (req && req.app ? req.app : null);
+    const connectedUsers = req && req.app ? req.app.get('connectedUsers') : (global.app ? global.app.get('connectedUsers') : null);
     
-    if (connectedUsers && connectedUsers[recipientId]) {
+    if (io && connectedUsers && connectedUsers[recipientId]) {
       const populatedNotification = await Notification.findById(notification._id)
         .populate('sender', 'username avatar');
         
