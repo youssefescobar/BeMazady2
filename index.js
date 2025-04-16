@@ -68,7 +68,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/users", UserRoute);
 app.use("/api/recommendations", recommendationRoutes);
-//app.use('/api/analytics', analyticsRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 app.use('/api/payments', paymentRoutes);
 app.use('/api/orders', orderRoutes);
@@ -144,5 +144,4 @@ server.listen(PORT, () => {
   console.log(`Online on port: ${PORT}`);
   initScheduledTasks(app);
   console.log("Scheduled tasks initialized");
-  console.log(`Swagger Docs available at http://localhost:${PORT}/api-docs`);
 }); 

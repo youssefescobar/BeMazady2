@@ -4,7 +4,7 @@ const Auction = require('../models/Auction');
 const Item = require('../models/Item');
 const User = require('../models/User');
 const Bid = require('../models/Bid');
-//const Order = require('../models/Order'); // If you have an Order model
+const Order = require('../models/Order'); // If you have an Order model
 
 // Helper function to get date range
 const getDateRange = (period) => {
@@ -64,12 +64,12 @@ const getAdminDashboardStats = async (period = 'month') => {
   let periodRevenue = 0;
   
   if (mongoose.models.Order) {
-    const revenueStats = await mongoose.models.Order.aggregate([
+    const revenueStats = await Order.aggregate([
       { $match: { paymentStatus: 'paid' } },
       { $group: { _id: null, total: { $sum: '$totalAmount' } } }
     ]);
     
-    const periodRevenueStats = await mongoose.models.Order.aggregate([
+    const periodRevenueStats = await Order.aggregate([
       { 
         $match: { 
           paymentStatus: 'paid',
@@ -96,11 +96,11 @@ const getAdminDashboardStats = async (period = 'month') => {
         as: 'categoryDetails'
       }
     },
-    { $unwind: '$categoryDetails' },
+    { $unwind: { path: '$categoryDetails', preserveNullAndEmptyArrays: true } },
     { 
       $project: { 
         _id: 1, 
-        name: '$categoryDetails.name',
+        name: { $ifNull: ['$categoryDetails.name', 'Uncategorized'] },
         count: 1
       }
     }
@@ -109,7 +109,7 @@ const getAdminDashboardStats = async (period = 'month') => {
   // Get sales by date
   const salesByDate = [];
   if (mongoose.models.Order) {
-    const salesData = await mongoose.models.Order.aggregate([
+    const salesData = await Order.aggregate([
       { 
         $match: { 
           paymentStatus: 'paid',
@@ -205,20 +205,20 @@ const getSellerStats = async (sellerId, period = 'month') => {
   if (mongoose.models.Order) {
     // This assumes your Order model has a seller field or can be linked to auctions
     // Adjust this query based on your actual data model
-    const revenueStats = await mongoose.models.Order.aggregate([
+    const revenueStats = await Order.aggregate([
       { 
         $match: { 
-          seller: mongoose.Types.ObjectId(sellerId),
+          seller: new mongoose.Types.ObjectId(sellerId),
           paymentStatus: 'paid'
         } 
       },
       { $group: { _id: null, total: { $sum: '$totalAmount' } } }
     ]);
     
-    const periodRevenueStats = await mongoose.models.Order.aggregate([
+    const periodRevenueStats = await Order.aggregate([
       { 
         $match: { 
-          seller: mongoose.Types.ObjectId(sellerId),
+          seller: new mongoose.Types.ObjectId(sellerId),
           paymentStatus: 'paid',
           createdAt: { $gte: startDate, $lte: endDate }
         } 
@@ -232,7 +232,7 @@ const getSellerStats = async (sellerId, period = 'month') => {
   
   // Get top performing items
   const topItems = await Auction.aggregate([
-    { $match: { seller: mongoose.Types.ObjectId(sellerId), status: 'completed' } },
+    { $match: { seller: new mongoose.Types.ObjectId(sellerId), status: 'completed' } },
     { $sort: { currentPrice: -1 } },
     { $limit: 5 },
     {
@@ -243,11 +243,11 @@ const getSellerStats = async (sellerId, period = 'month') => {
         as: 'itemDetails'
       }
     },
-    { $unwind: '$itemDetails' },
+    { $unwind: { path: '$itemDetails', preserveNullAndEmptyArrays: true } },
     {
       $project: {
         _id: 1,
-        title: '$itemDetails.title',
+        title: { $ifNull: ['$itemDetails.title', 'Unknown Item'] },
         finalPrice: '$currentPrice',
         endDate: 1
       }
@@ -258,7 +258,7 @@ const getSellerStats = async (sellerId, period = 'month') => {
   const auctionsByDate = await Auction.aggregate([
     { 
       $match: { 
-        seller: mongoose.Types.ObjectId(sellerId),
+        seller: new mongoose.Types.ObjectId(sellerId),
         createdAt: { $gte: startDate, $lte: endDate }
       } 
     },
@@ -300,8 +300,11 @@ const getSellerStats = async (sellerId, period = 'month') => {
 
 // Get item performance analytics
 const getItemAnalytics = async (itemId) => {
+  // Ensure itemId is converted to ObjectId
+  const itemObjectId = new mongoose.Types.ObjectId(itemId); 
+
   // Find all auctions for this item
-  const auctions = await Auction.find({ item: itemId })
+  const auctions = await Auction.find({ item: itemObjectId })
     .populate('bids')
     .sort('-createdAt');
   
@@ -330,7 +333,7 @@ const getItemAnalytics = async (itemId) => {
   const bidHistory = await Bid.aggregate([
     { 
       $match: { 
-        auction: { $in: auctions.map(a => mongoose.Types.ObjectId(a._id)) }
+        auction: { $in: auctions.map(a => new mongoose.Types.ObjectId(a._id)) }
       } 
     },
     {
@@ -356,13 +359,14 @@ const getItemAnalytics = async (itemId) => {
       id: auction._id,
       startPrice: auction.startPrice,
       currentPrice: auction.currentPrice,
-      bidCount: auction.bids.length,
+      bidCount: auction.bids ? auction.bids.length : 0,
       status: auction.status,
       createdAt: auction.createdAt,
       endDate: auction.endDate
     }))
   };
 };
+
 
 module.exports = {
   getAdminDashboardStats,
