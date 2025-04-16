@@ -8,13 +8,7 @@ const User = require("../models/User")
 const { retryWithBackoff } = require("../utils/retry")
 const { PAYMOB_INTEGRATION_ID, PAYMOB_API_KEY, PAYMOB_IFRAME_ID, PAYMOB_HMAC_SECRET } = process.env // Access environment variable
 
-// Add this at the top of your file, right after the imports
-// Check and log environment variables at startup
-console.log("PayMob Environment Variables Check:")
-console.log("PAYMOB_API_KEY:", PAYMOB_API_KEY ? "Exists (length: " + PAYMOB_API_KEY.length + ")" : "Missing")
-console.log("PAYMOB_INTEGRATION_ID:", PAYMOB_INTEGRATION_ID ? "Exists" : "Missing")
-console.log("PAYMOB_IFRAME_ID:", PAYMOB_IFRAME_ID ? "Exists" : "Missing")
-console.log("PAYMOB_HMAC_SECRET:", PAYMOB_HMAC_SECRET ? "Exists" : "Missing")
+
 // Get PayMob authentication token
 const getAuthToken = async () => {
     return retryWithBackoff(async () => {

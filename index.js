@@ -6,13 +6,18 @@ const jwt = require("jsonwebtoken");
 const socketIo = require("socket.io");
 const mongoose = require("mongoose");
 
+const compression = require("compression"); // Compression middleware
+const rateLimit = require("express-rate-limit"); // Rate limiting middleware
+const helmet = require("helmet"); // Helmet middleware
+
+
+
 const { initScheduledTasks } = require('./services/scheduledTasks');
 const notificationRoutes = require("./routes/NotificationRoutes");
 const messageRoutes = require("./routes/MessageRoutes");
 const globalhandel = require("./middlewares/ErrorMiddle");
 const ApiError = require("./utils/ApiError");
 const dbConnect = require("./config/dbConnection");
-const setupSwagger = require("./config/swagger"); 
 const CategoryRoute = require("./routes/CategoriesRoutes");
 const SubcategoryRoute = require("./routes/SubcategoryRoutes");
 const ItemRoute = require("./routes/ItemRoutes");
@@ -35,8 +40,19 @@ const io = socketIo(server);
 dbConnect();
 
 // Middleware
+
+app.use(compression());
+app.use(helmet());  
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Max 100 requests per IP
+  message: "Too many requests from this IP, please try again later."
+});
+app.use(limiter);
 app.use(express.json());
 app.use(morgan("dev"));
+
 let redirectCounts = {};
 
 app.use((req, res, next) => {
@@ -54,8 +70,7 @@ app.use((err, req, res, next) => {
   trackError(err); // Your error tracking service
   next(err);
 });
-// Set up Swagger
-setupSwagger(app); 
+
 
 // API Routes
 app.use("/api/categories", CategoryRoute);
