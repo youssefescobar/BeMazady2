@@ -157,6 +157,9 @@ app.set("connectedUsers", connectedUsers);
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Online on port: ${PORT}`);
-  initScheduledTasks(app);
-  console.log("Scheduled tasks initialized");
+  setTimeout(() => {
+    initScheduledTasks(app);
+    console.log("Scheduled tasks initialized");
+  }, 3000)
+
 }); 

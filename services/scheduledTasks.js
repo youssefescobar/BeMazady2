@@ -100,11 +100,11 @@ const initScheduledTasks = (app) => {
   // Run every 5 minutes
   // Format: '*/5 * * * *' means "every 5 minutes"
   cron.schedule('*/5 * * * *', () => {
-    logger.info('Running scheduled task: endExpiredAuctions'); // Changed from console.log
+    logger.info('Running scheduled task: endExpiredAuctions'); 
     endExpiredAuctions();
   });
   
-  logger.info('Scheduled tasks initialized'); // Changed from console.log
+  logger.info('Scheduled tasks initialized'); 
 };
 
 module.exports = { initScheduledTasks };
