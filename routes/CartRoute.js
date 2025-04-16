@@ -1,17 +1,19 @@
-const express = require("express");
+const express = require("express")
 const {
   GetCart,
   AddToCart,
   RemoveFromCart,
   ClearCart,
-} = require("../controllers/CartController");
-const protect = require("../middlewares/AuthMiddle");
+  PrepareCheckout, // Make sure this matches the exported function name
+} = require("../controllers/CartController")
+const protect = require("../middlewares/AuthMiddle")
 
-const router = express.Router();
+const router = express.Router()
 
-router.get("/", protect, GetCart);
-router.post("/add", protect, AddToCart);
-router.delete("/remove", protect, RemoveFromCart);
-router.delete("/clear", protect, ClearCart);
+router.get("/", protect, GetCart)
+router.post("/add", protect, AddToCart)
+router.delete("/remove", protect, RemoveFromCart)
+router.delete("/clear", protect, ClearCart)
+router.get("/checkout", protect, PrepareCheckout) // This should now work
 
-module.exports = router;
+module.exports = router
