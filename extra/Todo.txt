@@ -3,16 +3,14 @@ Feel free to update / leave notes.
 Todo:
 
 1. Socket for irl
-
-
 2. Ai (recommendation , img , nlp)
 3. reverse auction 
-4. Analytics -
+4. Analytics  (check after orders) -
+
 5. Payment integration, orders +
-6. user interaction model for recommendation system
+6. user interaction model for recommendation system (fl a5er)
 7. handle transactions +
 
-8. add items, cat, sub with imgs +
 
 
 not important:

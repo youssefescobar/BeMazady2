@@ -51,10 +51,13 @@ const CreateItemValidator = [
       }
     }),
 
-  check("subcategory")
-    .optional()
-    .isArray({ min: 1 })
-    .withMessage("At least one subcategory is required"),
+  check("subcategory").custom((value, { req }) => {
+    const subcats = req.body.subcategory;
+    if (!subcats || (Array.isArray(subcats) && subcats.length === 0)) {
+      throw new Error("At least one subcategory is required");
+    }
+    return true;
+  }),
 
   check("subcategory.*")
     .isMongoId()

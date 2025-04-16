@@ -21,6 +21,7 @@ const AuctionRoute = require("./routes/AuctionRoute");
 const UserRoute = require("./routes/UserRoute");
 const recommendationRoutes = require("./routes/RecommendRoute");
 const CartRoutes = require("./routes/CartRoute");
+const analyticsRoutes = require('./routes/AnalyticsRoutes');
 
 // Initialize Express app
 const app = express();
@@ -48,6 +49,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/users", UserRoute);
 app.use("/api/recommendations", recommendationRoutes);
+//app.use('/api/analytics', analyticsRoutes);
 
 // Handle route errors
 app.all("*", (req, res, next) => {
