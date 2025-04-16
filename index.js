@@ -21,6 +21,9 @@ const UserRoute = require("./routes/UserRoute");
 const recommendationRoutes = require("./routes/RecommendRoute");
 const CartRoutes = require("./routes/CartRoute");
 
+const paymentRoutes = require('./routes/PaymentRoute');
+const orderRoutes = require('./routes/OrderRoute');
+
 // Initialize Express app
 const app = express();
 const server = http.createServer(app);
@@ -32,7 +35,23 @@ dbConnect();
 // Middleware
 app.use(express.json());
 app.use(morgan("dev"));
+let redirectCounts = {};
 
+app.use((req, res, next) => {
+  const url = req.originalUrl;
+  redirectCounts[url] = (redirectCounts[url] || 0) + 1;
+  
+  if (redirectCounts[url] > 3) {
+    console.error(`Redirect loop detected for ${url}`);
+    return res.status(500).json({ error: 'Redirect loop detected' });
+  }
+  next();
+});
+app.use((err, req, res, next) => {
+  console.error('Redirect Error:', err);
+  trackError(err); // Your error tracking service
+  next(err);
+});
 // Set up Swagger
 setupSwagger(app); 
 
@@ -48,7 +67,23 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/users", UserRoute);
 app.use("/api/recommendations", recommendationRoutes);
 
-// Handle route errors
+app.use('/api/payments', paymentRoutes);
+app.use('/api/orders', orderRoutes);
+
+app.get('/payment/success', (req, res) => {
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+  const queryString = Object.keys(req.query).length 
+    ? `?${new URLSearchParams(req.query).toString()}`
+    : '';
+  return res.redirect(`${frontendUrl}/payment/success${queryString}`);
+});
+
+app.get('/payment/failure', (req, res) => {
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+  const queryParams = new URLSearchParams(req.query).toString();
+  return res.redirect(`${frontendUrl}/payment/failure?${queryParams}`);
+});
+// Handle route errors - ONLY ONE catch-all handler
 app.all("*", (req, res, next) => {
   next(new ApiError(`Can't find this route: ${req.originalUrl}`, 400));
 });
@@ -105,4 +140,4 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Online on port: ${PORT}`);
   console.log(`Swagger Docs available at http://localhost:${PORT}/api-docs`);
-});
+}); 
