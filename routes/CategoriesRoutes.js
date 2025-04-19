@@ -26,7 +26,7 @@ router.get("/:id", GetCategoryValidator, GetCategory);
 router.post(
   "/",
   protect,
-  authorize("admin", "buyer"),
+  authorize("admin"),
   uploadMiddleware,
   CreateCategoryValidator,
   CreateCategory
@@ -35,7 +35,7 @@ router.post(
 router.put(
   "/:id",
   protect,
-  authorize("admin", "buyer"),
+  authorize("admin"),
   uploadMiddleware,
   UpdateCategoryValidator,
   UpdateCategory
@@ -44,7 +44,7 @@ router.put(
 router.delete(
   "/:id",
   protect,
-  authorize("admin", "buyer"),
+  authorize("admin"),
   DeleteCategoryValidator,
   DeleteCategory
 );

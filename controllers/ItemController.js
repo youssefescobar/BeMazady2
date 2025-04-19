@@ -29,6 +29,7 @@ const CreateItem = asyncHandler(async (req, res) => {
       subcategory: req.body.subcategory,
       ratingsAvg: req.body.ratingsAvg,
       slug: slugify(req.body.title),
+      owner: req.user._id,
     });
 
     res.status(201).json({ status: "success", data: newItem });
@@ -85,8 +86,16 @@ const GetItem = asyncHandler(async (req, res, next) => {
 const UpdateItem = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
   const item = await Item.findById(id);
+
   if (!item) {
     return next(new ApiError(`No item with id: ${id}`, 404));
+  }
+
+  if (
+    req.user.role !== "admin" &&
+    item.owner.toString() !== req.user._id.toString()
+  ) {
+    return next(new ApiError("Not authorized to update this item", 403));
   }
 
   let newItemCover = item.item_cover;
@@ -123,6 +132,13 @@ const DeleteItem = asyncHandler(async (req, res, next) => {
   if (!item) {
     return next(new ApiError(`No item with id: ${id}`, 404));
   }
+  // make sure the owner is the one deleting or an admin
+  if (
+    req.user.role !== "admin" &&
+    item.owner.toString() !== req.user._id.toString()
+  ) {
+    return next(new ApiError("Not authorized to delete this item", 403));
+  }
 
   if (item.item_cover) await fsPromises.unlink(item.item_cover).catch(() => {});
   await Promise.all(
@@ -134,7 +150,6 @@ const DeleteItem = asyncHandler(async (req, res, next) => {
 });
 
 const AddReview = asyncHandler(async (req, res) => {
-  
   // Validate ObjectId format
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res

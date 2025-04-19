@@ -1,7 +1,8 @@
 const express = require("express");
-const router = express.Router({ mergeParams: true });
-const protect = require("../middlewares/AuthMiddle"); // Ensure correct path
-const authorize = require("../middlewares/AuthorizeMiddle"); // Import authorize middleware
+const router = express.Router();
+
+const protect = require("../middlewares/AuthMiddle");
+const authorize = require("../middlewares/AuthorizeMiddle");
 
 const {
   CreateSubcategory,
@@ -9,45 +10,44 @@ const {
   GetSubcategory,
   UpdateSubcategory,
   DeleteSubcategory,
+  getSubcategoriesByCategory,
 } = require("../controllers/SubcategoryController");
 
 const {
+  CreateSubcategoryValidator,
   GetSubcategoryValidator,
   UpdateSubcategoryValidator,
   DeleteSubcategoryValidator,
-  CreateSubcategoryValidator,
 } = require("../utils/Validators/SubcategoryValid");
 
-// Public: Anyone can view subcategories
-router.route("/").get(GetAllSubcategories);
+// 🔓 Public Routes
+router.get("/", GetAllSubcategories);
+router.get("/:id", GetSubcategoryValidator, GetSubcategory);
+router.get("/category/:categoryId", getSubcategoriesByCategory);
 
-// Protected: Only admins can create subcategories
-router
-  .route("/")
-  .post(
-    protect,
-    authorize("admin", "buyer"),
-    CreateSubcategoryValidator,
-    CreateSubcategory
-  );
+// 🔐 Admin-Protected Routes
+router.post(
+  "/",
+  protect,
+  authorize("admin"),
+  CreateSubcategoryValidator,
+  CreateSubcategory
+);
 
-// Public: Anyone can get a specific subcategory
-router.route("/:id").get(GetSubcategoryValidator, GetSubcategory);
+router.put(
+  "/:id",
+  protect,
+  authorize("admin"),
+  UpdateSubcategoryValidator,
+  UpdateSubcategory
+);
 
-// Protected: Only admins can update or delete subcategories
-router
-  .route("/:id")
-  .put(
-    protect,
-    authorize("admin"),
-    UpdateSubcategoryValidator,
-    UpdateSubcategory
-  )
-  .delete(
-    protect,
-    authorize("admin"),
-    DeleteSubcategoryValidator,
-    DeleteSubcategory
-  );
+router.delete(
+  "/:id",
+  protect,
+  authorize("admin"),
+  DeleteSubcategoryValidator,
+  DeleteSubcategory
+);
 
 module.exports = router;

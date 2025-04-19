@@ -75,10 +75,22 @@ const DeleteSubcategory = asyncHandler(async (req, res, next) => {
   res.status(204).json({ msg: "Deleted Succesfully" });
 });
 
+const getSubcategoriesByCategory = asyncHandler(async (req, res) => {
+  const categoryId = req.params.categoryId;
+
+  const subcategories = await SubcategoryModel.find({ category: categoryId });
+
+  res.status(200).json({
+    results: subcategories.length,
+    data: subcategories,
+  });
+});
+
 module.exports = {
   CreateSubcategory,
   GetAllSubcategories,
   GetSubcategory,
   UpdateSubcategory,
   DeleteSubcategory,
+  getSubcategoriesByCategory,
 };

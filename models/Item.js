@@ -4,7 +4,6 @@ const slugify = require("slugify");
 const ReviewSchema = new mongoose.Schema(
   {
     user: {
-  
       username: { type: String, required: true }, // Store the actual username
     },
     rating: { type: Number, min: 1, max: 5, required: true },
@@ -70,6 +69,11 @@ const ItemSchema = new mongoose.Schema(
       type: String,
       required: true,
       lowercase: true,
+    },
+    owner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
     },
   },
   {

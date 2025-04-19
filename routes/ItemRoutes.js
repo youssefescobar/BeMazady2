@@ -43,7 +43,7 @@ router.post("/", protect, upload, CreateItemValidator, CreateItem);
 router.put(
   "/:id",
   protect,
-  authorize("admin"),
+  authorize("admin", "seller"),
   upload,
   UpdateItemValidator,
   UpdateItem
@@ -51,7 +51,7 @@ router.put(
 router.delete(
   "/:id",
   protect,
-  authorize("admin", "seller", "buyer"),
+  authorize("admin", "seller"),
   DeleteItemValidator,
   DeleteItem
 );

@@ -53,18 +53,18 @@ app.use(limiter);
 app.use(express.json());
 app.use(morgan("dev"));
 
-let redirectCounts = {};
+// let redirectCounts = {};
 
-app.use((req, res, next) => {
-  const url = req.originalUrl;
-  redirectCounts[url] = (redirectCounts[url] || 0) + 1;
+// app.use((req, res, next) => {
+//   const url = req.originalUrl;
+//   redirectCounts[url] = (redirectCounts[url] || 0) + 1;
   
-  if (redirectCounts[url] > 3) {
-    console.error(`Redirect loop detected for ${url}`);
-    return res.status(500).json({ error: 'Redirect loop detected' });
-  }
-  next();
-});
+//   if (redirectCounts[url] > 3) {
+//     console.error(`Redirect loop detected for ${url}`);
+//     return res.status(500).json({ error: 'Redirect loop detected' });
+//   }
+//   next();
+// });
 app.use((err, req, res, next) => {
   console.error('Redirect Error:', err);
   trackError(err); // Your error tracking service
