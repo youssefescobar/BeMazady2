@@ -100,7 +100,7 @@ const initScheduledTasks = (app) => {
   global.app = app;
 
   // Run every 5 minutes - fixed from the original "every 1 minute"
-  cron.schedule("*/1 * * * *", () => {
+  cron.schedule("*/5 * * * *", () => {
     logger.info("Running scheduled task: endExpiredAuctions");
     endExpiredAuctions();
   });

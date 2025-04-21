@@ -42,7 +42,8 @@ const createAuction = asyncHandler(async (req, res) => {
 
     if (reservePrice) auctionData.reservePrice = Number(reservePrice);
     if (buyNowPrice) auctionData.buyNowPrice = Number(buyNowPrice);
-    if (minimumBidIncrement) auctionData.minimumBidIncrement = Number(minimumBidIncrement);
+    if (minimumBidIncrement)
+      auctionData.minimumBidIncrement = Number(minimumBidIncrement);
     if (endDate) auctionData.endDate = new Date(endDate);
 
     // ✅ Get Cloudinary image URLs from req.cloudinaryFiles
@@ -72,7 +73,9 @@ const createAuction = asyncHandler(async (req, res) => {
       await createNotification(
         req,
         process.env.ADMIN_USER_ID,
-        `New auction "${auction.title}" has been created by seller ${req.user.username || req.user.id}`,
+        `New auction "${auction.title}" has been created by seller ${
+          req.user.username || req.user.id
+        }`,
         "SYSTEM",
         null,
         { model: "Auction", id: auction._id }
@@ -85,8 +88,6 @@ const createAuction = asyncHandler(async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
-
-
 
 // Place a bid on an auction
 const placeBid = asyncHandler(async (req, res) => {
@@ -126,7 +127,7 @@ const placeBid = asyncHandler(async (req, res) => {
     req,
     auction.seller._id,
     `${bidder.username} placed a bid of $${amount} on your auction "${auction.item}"`,
-    "USER",
+    "SYSTEM",
     req.body.bidder,
     { model: "Bid", id: bid._id }
   );
@@ -299,7 +300,9 @@ const updateAuction = asyncHandler(async (req, res) => {
 
   let auction = await Auction.findById(id).populate("seller", "username _id");
   if (!auction) {
-    return res.status(404).json({ success: false, message: "Auction not found" });
+    return res
+      .status(404)
+      .json({ success: false, message: "Auction not found" });
   }
 
   if (
@@ -332,7 +335,12 @@ const updateAuction = asyncHandler(async (req, res) => {
   Object.keys(req.body).forEach((key) => {
     if (allowedFields.includes(key)) {
       if (
-        ["startPrice", "reservePrice", "buyNowPrice", "minimumBidIncrement"].includes(key)
+        [
+          "startPrice",
+          "reservePrice",
+          "buyNowPrice",
+          "minimumBidIncrement",
+        ].includes(key)
       ) {
         auction[key] = Number(req.body[key]);
       } else if (key === "endDate") {
@@ -377,15 +385,21 @@ const updateAuction = asyncHandler(async (req, res) => {
     const updateItems = [];
 
     if (updates.endDate)
-      updateItems.push(`end date changed to ${new Date(updates.endDate).toLocaleString()}`);
+      updateItems.push(
+        `end date changed to ${new Date(updates.endDate).toLocaleString()}`
+      );
     if (updates.buyNowPrice)
       updateItems.push(`buy now price changed to $${updates.buyNowPrice}`);
     if (updates.minimumBidIncrement)
-      updateItems.push(`minimum bid increment changed to $${updates.minimumBidIncrement}`);
+      updateItems.push(
+        `minimum bid increment changed to $${updates.minimumBidIncrement}`
+      );
     if (updates.auctionCover || updates.auctionImages)
       updateItems.push("auction images have been updated");
 
-    const updateMessage = `The auction has been updated: ${updateItems.join(", ")}`;
+    const updateMessage = `The auction has been updated: ${updateItems.join(
+      ", "
+    )}`;
 
     for (const bidderId of bidders) {
       await createNotification(req, bidderId, updateMessage, "SYSTEM", null, {
