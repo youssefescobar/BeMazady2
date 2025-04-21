@@ -42,14 +42,14 @@ dbConnect();
 // Middleware
 
 app.use(compression());
-app.use(helmet());  
+// app.use(helmet());  
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Max 100 requests per IP
-  message: "Too many requests from this IP, please try again later."
-});
-app.use(limiter);
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000, // 15 minutes
+//   max: 100, // Max 100 requests per IP
+//   message: "Too many requests from this IP, please try again later."
+// });
+// app.use(limiter);
 app.use(express.json());
 app.use(morgan("dev"));
 
