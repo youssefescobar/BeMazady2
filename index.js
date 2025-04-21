@@ -86,7 +86,7 @@ app.use("/api/recommendations", recommendationRoutes);
 app.use('/api/analytics', analyticsRoutes);
 
 app.use('/api/payments', paymentRoutes);
-app.use('/api/orders', orderRoutes);
+app.use('/api/orders', orderRoutes); 
 
 app.get('/payment/success', (req, res) => {
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
