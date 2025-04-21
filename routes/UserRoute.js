@@ -47,7 +47,7 @@ router.put(
 router.delete(
   "/:id",
   protect,
-  authorize("admin", "buyer"),
+  authorize("admin"),
   DeleteUserValidator,
   userController.deleteUser
 );
