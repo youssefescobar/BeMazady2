@@ -78,36 +78,24 @@ const updateUser = asyncHandler(async (req, res, next) => {
   if (national_id) updateData.national_id = national_id;
   if (role) updateData.role = role;
 
-  // Handle file upload for user_picture - using the field name from the middleware
+  // Handle Cloudinary image update
   if (
-    req.files &&
-    req.files.user_picture &&
-    req.files.user_picture.length > 0
+    req.cloudinaryFiles &&
+    req.cloudinaryFiles.user_picture &&
+    req.cloudinaryFiles.user_picture.length > 0
   ) {
-    // Get the file path from multer
-    const userPicturePath = req.files.user_picture[0].path;
+    const newUserPicture = req.cloudinaryFiles.user_picture[0];
 
-    // Format the path for storage in database (using forward slashes)
-    const formattedPath = userPicturePath.replace(/\\/g, "/");
-
-    // Store the path relative to the project root
-    updateData.user_picture = formattedPath.substring(
-      formattedPath.indexOf("uploads")
-    );
-
-    // If user already has a picture, delete the old one
+    // Optional: delete old Cloudinary image if public_id is stored in DB
     const existingUser = await User.findById(id);
-    if (existingUser && existingUser.user_picture) {
-      const oldPicturePath = path.join(
-        __dirname,
-        "..",
-        existingUser.user_picture
-      );
-      if (fs.existsSync(oldPicturePath)) {
-        fs.unlinkSync(oldPicturePath);
-        console.log(`✅ Deleted old picture: ${oldPicturePath}`);
-      }
+    if (!existingUser) {
+      return next(new ApiError(`No user found with id: ${id}`, 404));
     }
+
+    // Optional cleanup logic here (if you store public_id)
+    // cloudinary.uploader.destroy(existingUser.user_picture_public_id)
+
+    updateData.user_picture = newUserPicture; // Cloudinary URL
   }
 
   const updatedUser = await User.findByIdAndUpdate(
@@ -125,6 +113,7 @@ const updateUser = asyncHandler(async (req, res, next) => {
     data: updatedUser,
   });
 });
+
 
 // Update password
 const updatePassword = asyncHandler(async (req, res, next) => {

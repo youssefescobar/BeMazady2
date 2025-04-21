@@ -1,6 +1,5 @@
 const slugify = require("slugify");
 const asyncHandler = require("express-async-handler");
-const fsPromises = require("fs/promises");
 const mongoose = require("mongoose");
 const Item = require("../models/Item");
 const ApiFeatures = require("../utils/ApiFeatures");
@@ -10,12 +9,8 @@ const User = require("../models/User");
 // Create Item - Public / private
 const CreateItem = asyncHandler(async (req, res) => {
   try {
-    const itemCover =
-      req.files["item_cover"]?.[0]?.path.replace(/\\/g, "/") || "";
-    const itemPictures =
-      req.files["item_pictures"]?.map((file) =>
-        file.path.replace(/\\/g, "/")
-      ) || [];
+    const itemCover = req.cloudinaryFiles["item_cover"]?.[0] || "";
+    const itemPictures = req.cloudinaryFiles["item_pictures"] || [];
 
     const newItem = await Item.create({
       title: req.body.title,
@@ -101,19 +96,15 @@ const UpdateItem = asyncHandler(async (req, res, next) => {
   let newItemCover = item.item_cover;
   let newItemPictures = item.item_pictures;
 
-  if (req.files) {
-    if (req.files["item_cover"]) {
-      newItemCover = req.files["item_cover"][0].path.replace(/\\/g, "/");
-      if (item.item_cover)
-        await fsPromises.unlink(item.item_cover).catch(() => {});
+  if (req.cloudinaryFiles) {
+    if (req.cloudinaryFiles["item_cover"]) {
+      // Optionally delete old image from Cloudinary here using its public_id
+      newItemCover = req.cloudinaryFiles["item_cover"][0];
     }
-    if (req.files["item_pictures"]) {
-      newItemPictures = req.files["item_pictures"].map((file) =>
-        file.path.replace(/\\/g, "/")
-      );
-      await Promise.all(
-        item.item_pictures.map((pic) => fsPromises.unlink(pic).catch(() => {}))
-      );
+
+    if (req.cloudinaryFiles["item_pictures"]) {
+      // Optionally delete old images from Cloudinary
+      newItemPictures = req.cloudinaryFiles["item_pictures"];
     }
   }
 
@@ -122,8 +113,10 @@ const UpdateItem = asyncHandler(async (req, res, next) => {
   req.body.slug = slugify(req.body.title);
 
   const updatedItem = await Item.findByIdAndUpdate(id, req.body, { new: true });
-  res.status(200).json({ data: updatedItem });
+
+  res.status(200).json({ status: "success", data: updatedItem });
 });
+
 
 // Delete Item - Public
 const DeleteItem = asyncHandler(async (req, res, next) => {
@@ -140,13 +133,10 @@ const DeleteItem = asyncHandler(async (req, res, next) => {
     return next(new ApiError("Not authorized to delete this item", 403));
   }
 
-  if (item.item_cover) await fsPromises.unlink(item.item_cover).catch(() => {});
-  await Promise.all(
-    item.item_pictures.map((pic) => fsPromises.unlink(pic).catch(() => {}))
-  );
+
   await Item.findByIdAndDelete(id);
 
-  res.status(204).json({ message: "Item Deleted Successfully" });
+  res.status(204).json({ status: "success", message: "Item Deleted Successfully" });
 });
 
 const AddReview = asyncHandler(async (req, res) => {
