@@ -17,15 +17,24 @@ const createAuction = asyncHandler(async (req, res) => {
       buyNowPrice,
       minimumBidIncrement,
       endDate,
+      description,
+      title,
     } = req.body;
 
-    // Get seller ID from authenticated user
+    if (!title) {
+      return res.status(400).json({
+        success: false,
+        message: "Auction title is required",
+      });
+    }
+
     const seller = req.user.id;
 
-    // Convert fields to appropriate types
     const auctionData = {
-      item,
+      item: item || null, // Optional
       seller,
+      title,
+      description: description || "",
       startPrice: Number(startPrice),
       currentPrice: Number(startPrice),
       status: "active",
@@ -33,62 +42,37 @@ const createAuction = asyncHandler(async (req, res) => {
 
     if (reservePrice) auctionData.reservePrice = Number(reservePrice);
     if (buyNowPrice) auctionData.buyNowPrice = Number(buyNowPrice);
-    if (minimumBidIncrement)
-      auctionData.minimumBidIncrement = Number(minimumBidIncrement);
+    if (minimumBidIncrement) auctionData.minimumBidIncrement = Number(minimumBidIncrement);
     if (endDate) auctionData.endDate = new Date(endDate);
 
-    // Handle file uploads
-    if (req.files) {
-      // Process auction cover image
-      if (req.files.auctionCover && req.files.auctionCover.length > 0) {
-        const coverPath = req.files.auctionCover[0].path;
-        // Store relative path from uploads directory
-        const formattedPath = coverPath.replace(/\\/g, "/");
-        const relativePath = formattedPath.substring(
-          formattedPath.indexOf("uploads")
-        );
-        auctionData.auctionCover = relativePath;
-      } else {
-        return res.status(400).json({
-          success: false,
-          message: "Auction cover image is required",
-        });
-      }
+    // ✅ Get Cloudinary image URLs from req.cloudinaryFiles
+    const uploaded = req.cloudinaryFiles || {};
 
-      // Process additional auction images
-      if (req.files.auctionImages && req.files.auctionImages.length > 0) {
-        auctionData.auctionImages = req.files.auctionImages.map((file) => {
-          const imagePath = file.path;
-          const formattedPath = imagePath.replace(/\\/g, "/");
-          return formattedPath.substring(formattedPath.indexOf("uploads"));
-        });
-      } else {
-        // If no additional images, use the cover image
-        auctionData.auctionImages = [auctionData.auctionCover];
-      }
-    } else {
+    if (!uploaded.auctionCover || uploaded.auctionCover.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "Images are required for the auction",
+        message: "Auction cover image is required",
       });
     }
 
-    // Create the auction
+    auctionData.auctionCover = uploaded.auctionCover[0];
+    auctionData.auctionImages =
+      uploaded.auctionImages?.length > 0
+        ? uploaded.auctionImages
+        : [uploaded.auctionCover[0]];
+
     const auction = await Auction.create(auctionData);
 
-    // Populate seller information for response
     const populatedAuction = await Auction.findById(auction._id)
       .populate("seller", "username _id")
       .populate("item", "name description");
 
-    // Notify admin about the new auction
+    // ✅ Notify admin
     if (process.env.ADMIN_USER_ID) {
       await createNotification(
         req,
         process.env.ADMIN_USER_ID,
-        `New auction for "${auction.item}" has been created by seller ${
-          req.user.username || req.user.id
-        }`,
+        `New auction "${auction.title}" has been created by seller ${req.user.username || req.user.id}`,
         "SYSTEM",
         null,
         { model: "Auction", id: auction._id }
@@ -101,6 +85,8 @@ const createAuction = asyncHandler(async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
+
 
 // Place a bid on an auction
 const placeBid = asyncHandler(async (req, res) => {
@@ -313,12 +299,9 @@ const updateAuction = asyncHandler(async (req, res) => {
 
   let auction = await Auction.findById(id).populate("seller", "username _id");
   if (!auction) {
-    return res
-      .status(404)
-      .json({ success: false, message: "Auction not found" });
+    return res.status(404).json({ success: false, message: "Auction not found" });
   }
 
-  // Check if user is authorized (owner or admin)
   if (
     auction.seller._id.toString() !== req.user.id &&
     req.user.role !== "admin"
@@ -329,7 +312,6 @@ const updateAuction = asyncHandler(async (req, res) => {
     });
   }
 
-  // Prevent updating completed or cancelled auctions
   if (["completed", "cancelled"].includes(auction.status)) {
     return res.status(400).json({
       success: false,
@@ -337,7 +319,6 @@ const updateAuction = asyncHandler(async (req, res) => {
     });
   }
 
-  // Update only allowed fields
   const allowedFields = [
     "startPrice",
     "reservePrice",
@@ -350,14 +331,8 @@ const updateAuction = asyncHandler(async (req, res) => {
   const updates = {};
   Object.keys(req.body).forEach((key) => {
     if (allowedFields.includes(key)) {
-      // Convert numeric fields
       if (
-        [
-          "startPrice",
-          "reservePrice",
-          "buyNowPrice",
-          "minimumBidIncrement",
-        ].includes(key)
+        ["startPrice", "reservePrice", "buyNowPrice", "minimumBidIncrement"].includes(key)
       ) {
         auction[key] = Number(req.body[key]);
       } else if (key === "endDate") {
@@ -369,62 +344,25 @@ const updateAuction = asyncHandler(async (req, res) => {
     }
   });
 
-  // Handle file uploads for updates
-  if (req.files) {
-    // Update auction cover image if provided
-    if (req.files.auctionCover && req.files.auctionCover.length > 0) {
-      // Delete old cover image if it exists
-      if (auction.auctionCover) {
-        const oldCoverPath = path.join(__dirname, "..", auction.auctionCover);
-        if (fs.existsSync(oldCoverPath)) {
-          fs.unlinkSync(oldCoverPath);
-          console.log(`✅ Deleted old auction cover: ${oldCoverPath}`);
-        }
-      }
+  // ✅ Handle Cloudinary files from middleware
+  const cloudFiles = req.cloudinaryFiles || {};
 
-      // Save new cover image path
-      const coverPath = req.files.auctionCover[0].path;
-      const formattedPath = coverPath.replace(/\\/g, "/");
-      const relativePath = formattedPath.substring(
-        formattedPath.indexOf("uploads")
-      );
-      auction.auctionCover = relativePath;
-      updates.auctionCover = relativePath;
-    }
-
-    // Update additional auction images if provided
-    if (req.files.auctionImages && req.files.auctionImages.length > 0) {
-      // Delete old images if they exist
-      if (auction.auctionImages && auction.auctionImages.length > 0) {
-        auction.auctionImages.forEach((imagePath) => {
-          const oldImagePath = path.join(__dirname, "..", imagePath);
-          if (fs.existsSync(oldImagePath)) {
-            fs.unlinkSync(oldImagePath);
-            console.log(`✅ Deleted old auction image: ${oldImagePath}`);
-          }
-        });
-      }
-
-      // Save new image paths
-      auction.auctionImages = req.files.auctionImages.map((file) => {
-        const imagePath = file.path;
-        const formattedPath = imagePath.replace(/\\/g, "/");
-        return formattedPath.substring(formattedPath.indexOf("uploads"));
-      });
-      updates.auctionImages = auction.auctionImages;
-    }
+  if (cloudFiles.auctionCover && cloudFiles.auctionCover.length > 0) {
+    auction.auctionCover = cloudFiles.auctionCover[0];
+    updates.auctionCover = cloudFiles.auctionCover[0];
   }
 
-  // Save the updated auction
+  if (cloudFiles.auctionImages && cloudFiles.auctionImages.length > 0) {
+    auction.auctionImages = cloudFiles.auctionImages;
+    updates.auctionImages = cloudFiles.auctionImages;
+  }
+
   auction = await auction.save();
 
-  // If status changed to cancelled, notify bidders
-  if (req.body.status === "cancelled") {
-    // Notify all bidders the auction was cancelled
-    const bidders = await Bid.find({
-      auction: auction._id,
-    }).distinct("bidder");
+  // Notify users
+  const bidders = await Bid.find({ auction: auction._id }).distinct("bidder");
 
+  if (req.body.status === "cancelled") {
     for (const bidderId of bidders) {
       await createNotification(
         req,
@@ -435,31 +373,19 @@ const updateAuction = asyncHandler(async (req, res) => {
         { model: "Auction", id: auction._id }
       );
     }
-  }
-  // For other significant updates, notify existing bidders
-  else if (Object.keys(updates).length > 0) {
-    const bidders = await Bid.find({
-      auction: auction._id,
-    }).distinct("bidder");
-
-    // Format update message based on what changed
-    let updateMessage = `The auction has been updated: `;
+  } else if (Object.keys(updates).length > 0) {
     const updateItems = [];
 
     if (updates.endDate)
-      updateItems.push(
-        `end date changed to ${new Date(updates.endDate).toLocaleString()}`
-      );
+      updateItems.push(`end date changed to ${new Date(updates.endDate).toLocaleString()}`);
     if (updates.buyNowPrice)
       updateItems.push(`buy now price changed to $${updates.buyNowPrice}`);
     if (updates.minimumBidIncrement)
-      updateItems.push(
-        `minimum bid increment changed to $${updates.minimumBidIncrement}`
-      );
+      updateItems.push(`minimum bid increment changed to $${updates.minimumBidIncrement}`);
     if (updates.auctionCover || updates.auctionImages)
-      updateItems.push(`auction images have been updated`);
+      updateItems.push("auction images have been updated");
 
-    updateMessage += updateItems.join(", ");
+    const updateMessage = `The auction has been updated: ${updateItems.join(", ")}`;
 
     for (const bidderId of bidders) {
       await createNotification(req, bidderId, updateMessage, "SYSTEM", null, {
@@ -469,13 +395,13 @@ const updateAuction = asyncHandler(async (req, res) => {
     }
   }
 
-  // Populate the response
   const populatedAuction = await Auction.findById(id)
     .populate("seller", "username _id")
     .populate("item", "name description");
 
   res.status(200).json({ success: true, data: populatedAuction });
 });
+
 const deleteAuction = asyncHandler(async (req, res) => {
   const { id } = req.params;
 

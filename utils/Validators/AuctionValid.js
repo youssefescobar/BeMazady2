@@ -5,15 +5,15 @@ const ItemModel = require("../../models/Item");
 const AuctionModel = require("../../models/Auction");
 
 const CreateAuctionValidator = [
-  check("item")
-    .isMongoId()
-    .withMessage("Invalid item ID")
-    .custom(async (itemId) => {
-      const item = await ItemModel.findById(itemId);
-      if (!item) {
-        throw new Error(`No item found with ID: ${itemId}`);
-      }
-    }),
+  // check("item")
+  //   .isMongoId()
+  //   .withMessage("Invalid item ID")
+  //   .custom(async (itemId) => {
+  //     const item = await ItemModel.findById(itemId);
+  //     if (!item) {
+  //       throw new Error(`No item found with ID: ${itemId}`);
+  //     }
+  //   }),
   check("seller")
     .isMongoId()
     .withMessage("Invalid seller ID")

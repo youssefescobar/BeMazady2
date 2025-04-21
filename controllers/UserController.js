@@ -1,7 +1,6 @@
 const User = require("../models/User");
 const bcrypt = require("bcrypt");
 const path = require("path");
-
 const jwt = require("jsonwebtoken");
 const asyncHandler = require("express-async-handler");
 const ApiError = require("../utils/ApiError");
@@ -147,7 +146,6 @@ const updatePassword = asyncHandler(async (req, res, next) => {
 // Delete user
 const deleteUser = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
-
   const user = await User.findById(id);
 
   if (!user) {
@@ -155,41 +153,27 @@ const deleteUser = asyncHandler(async (req, res, next) => {
   }
 
   if (user.user_picture) {
-    const absolutePath = path.join(__dirname, "..", user.user_picture);
+    try {
+      // Extract public_id from the Cloudinary URL
+      const urlParts = user.user_picture.split("/");
+      const filename = urlParts[urlParts.length - 1]; // e.g., my_image.jpg
+      const publicId = urlParts
+        .slice(urlParts.indexOf("upload") + 1)
+        .join("/")
+        .replace(/\.[^/.]+$/, ""); // remove extension (.jpg, .png, etc.)
 
-    if (fs.existsSync(absolutePath)) {
-      try {
-        fs.unlinkSync(absolutePath);
-        console.log(`✅ Successfully deleted user picture: ${absolutePath}`);
-      } catch (err) {
-        console.error(`❌ Error deleting file: ${err.message}`);
-      }
-    } else {
-      // If not found with the first approach, try direct path
-      const directPath = path.resolve(user.user_picture);
-
-      if (fs.existsSync(directPath)) {
-        try {
-          fs.unlinkSync(directPath);
-          console.log(
-            `✅ Successfully deleted user picture using alternate path: ${directPath}`
-          );
-        } catch (err) {
-          console.error(
-            `❌ Error deleting file with alternate path: ${err.message}`
-          );
-        }
-      } else {
-        console.log(`❌ Could not find file to delete at either path`);
-      }
+      await cloudinary.uploader.destroy(publicId);
+      console.log(`✅ Deleted Cloudinary image: ${publicId}`);
+    } catch (err) {
+      console.error(`❌ Error deleting image from Cloudinary: ${err.message}`);
     }
   }
 
-  // Delete the user
   await User.findByIdAndDelete(id);
-
   res.status(204).send();
 });
+
+
 // Add item to favorites
 const addToFavorites = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
