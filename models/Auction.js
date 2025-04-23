@@ -2,7 +2,6 @@ const mongoose = require("mongoose");
 
 const AuctionSchema = new mongoose.Schema(
   {
-    item: { type: mongoose.Schema.Types.ObjectId, ref: "Item", required: false ,default: null},
     seller: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -33,6 +32,11 @@ const AuctionSchema = new mongoose.Schema(
     auctionImages: [{ type: String, required: true }], // Array of images
     description: { type: String, required: true },
     title: { type: String, required: true },
+    category: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      required: true,
+    },
   },
   { timestamps: true }
 ); // Adds createdAt and updatedAt fields automatically

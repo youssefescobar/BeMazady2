@@ -8,10 +8,10 @@ const ApiFeatures = require("../utils/ApiFeatures");
 // Create Category - Private
 const CreateCategory = asyncHandler(async (req, res) => {
   try {
-    // Extract the category image path - fix the field name to match multer config
+    // Extract the category image URL from cloudinaryFiles
     const categoryImage =
-      req.files && req.files["categoryImage"] && req.files["categoryImage"][0]
-        ? req.files["categoryImage"][0].path.replace(/\\/g, "/")
+      req.cloudinaryFiles && req.cloudinaryFiles["categoryImage"] && req.cloudinaryFiles["categoryImage"][0]
+        ? req.cloudinaryFiles["categoryImage"][0]
         : "";
 
     // Create the category directly without checking for existing (handle that with unique index)
@@ -83,27 +83,18 @@ const UpdateCategory = asyncHandler(async (req, res, next) => {
 
   // Handle image update if provided
   if (
-    req.files &&
-    req.files["categoryImage"] &&
-    req.files["categoryImage"][0]
+    req.cloudinaryFiles &&
+    req.cloudinaryFiles["categoryImage"] &&
+    req.cloudinaryFiles["categoryImage"][0]
   ) {
-    // Get new image path
-    const newImagePath = req.files["categoryImage"][0].path.replace(/\\/g, "/");
+    // Get new image URL from Cloudinary
+    const newImageUrl = req.cloudinaryFiles["categoryImage"][0];
 
-    // Delete old image if it exists
-    if (category.categoryImage) {
-      try {
-        await fs.unlink(category.categoryImage);
-      } catch (error) {
-        console.error(
-          `Failed to delete old image: ${category.categoryImage}`,
-          error
-        );
-      }
-    }
-
-    // Set the new image path
-    updateData.categoryImage = newImagePath;
+    // Note: No need to delete old files as they're stored in Cloudinary
+    // You could implement a Cloudinary delete API call here if needed
+    
+    // Set the new image URL
+    updateData.categoryImage = newImageUrl;
   }
 
   // Update slug if name is provided
@@ -129,16 +120,11 @@ const DeleteCategory = asyncHandler(async (req, res, next) => {
     return next(new ApiError(`No category with id: ${id}`, 404));
   }
 
-  // Check for categoryImage and delete if it exists
-  if (category.categoryImage) {
-    try {
-      await fs.unlink(category.categoryImage);
-    } catch (error) {
-      // Log the error but continue with deletion
-      console.error(`Failed to delete image: ${category.categoryImage}`, error);
-    }
-  }
-
+  // Note: With Cloudinary, we don't need to manually delete files from the filesystem
+  // If you want to also delete the image from Cloudinary, you would need to:
+  // 1. Extract the public_id from the URL
+  // 2. Call cloudinary.uploader.destroy(public_id)
+  
   await CategoryModel.findByIdAndDelete(id);
 
   res.status(204).json({ message: "Category Deleted Successfully" });
