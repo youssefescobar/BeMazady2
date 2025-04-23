@@ -88,6 +88,10 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/orders', orderRoutes);
 
+
+app.get('/', (req, res) => {
+  res.send('Api is running ya tohamy');
+})
 app.get('/payment/success', (req, res) => {
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
   const queryString = Object.keys(req.query).length 
