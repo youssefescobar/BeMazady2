@@ -64,7 +64,7 @@ router.patch(
 router.patch(
   "/:id/role",
   protect,
-  authorize("admin"),
+  authorize("seller", "admin", "buyer"),
   UpdateUserRoleValidator,
   userController.updateUserRole
 );
