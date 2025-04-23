@@ -259,11 +259,11 @@ const updateUserRole = asyncHandler(async (req, res, next) => {
   }
 
   // Valid role check
-  const validRoles = ["buyer", "seller", "admin"];
+  const validRoles = ["buyer", "seller"];
   if (!validRoles.includes(role)) {
     return next(
       new ApiError(
-        "Invalid role. Role must be either buyer, seller, or admin",
+        "Invalid role. Role must be either buyer or seller",
         400
       )
     );
