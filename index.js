@@ -31,6 +31,8 @@ const analyticsRoutes = require('./routes/AnalyticsRoutes');
 const paymentRoutes = require('./routes/PaymentRoute');
 const orderRoutes = require('./routes/OrderRoute');
 
+const ReverseAuctionRoute = require("./routes/ReverseAuctionRoute"); // Add this line
+
 // Initialize Express app
 const app = express();
 const server = http.createServer(app);
@@ -70,8 +72,6 @@ app.use((err, req, res, next) => {
   trackError(err); // Your error tracking service
   next(err);
 });
-
-
 // API Routes
 app.use("/api/categories", CategoryRoute);
 app.use("/api/subcategories", SubcategoryRoute);
@@ -84,9 +84,9 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/users", UserRoute);
 app.use("/api/recommendations", recommendationRoutes);
 app.use('/api/analytics', analyticsRoutes);
-
+app.use("/api/reverseauctions", ReverseAuctionRoute);
 app.use('/api/payments', paymentRoutes);
-app.use('/api/orders', orderRoutes);
+app.use('/api/orders', orderRoutes); 
 
 
 app.get('/', (req, res) => {
