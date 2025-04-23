@@ -1,46 +1,41 @@
+// utils/logger.js
 const fs = require('fs');
 const path = require('path');
 
-const logDir = path.join(__dirname, '../logs');
-
-// Create logs directory if it doesn't exist
+const logDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir);
 }
 
-const logToFile = (message, type = 'info') => {
+const logToConsoleAndFile = (message, type = 'info') => {
   const timestamp = new Date().toISOString();
-  const logMessage = `[${timestamp}] [${type.toUpperCase()}] ${message}\n`;
+  const logMessage = `[${timestamp}] [${type.toUpperCase()}] ${message}`;
+  const logFile = path.join(logDir, `${timestamp.split('T')[0]}.log`);
 
   // Log to console
-  console.log(logMessage);
+  switch (type) {
+    case 'error':
+      console.error(logMessage);
+      break;
+    case 'warn':
+      console.warn(logMessage);
+      break;
+    case 'debug':
+      console.debug(logMessage);
+      break;
+    default:
+      console.log(logMessage);
+  }
 
   // Log to file
-  const logFile = path.join(logDir, `${new Date().toISOString().split('T')[0]}.log`);
-  fs.appendFileSync(logFile, logMessage);
+  fs.appendFileSync(logFile, logMessage + '\n');
+};
+
 const logger = {
-  info: (message) => {
-    const timestamp = new Date().toISOString();
-    console.log(`[${timestamp}] [INFO] ${message}`);
-  },
-  error: (message) => {
-    const timestamp = new Date().toISOString();
-    console.error(`[${timestamp}] [ERROR] ${message}`);
-  },
-  warn: (message) => {
-    const timestamp = new Date().toISOString();
-    console.warn(`[${timestamp}] [WARN] ${message}`);
-  },
-  debug: (message) => {
-    const timestamp = new Date().toISOString();
-    console.debug(`[${timestamp}] [DEBUG] ${message}`);
-  }
-}
+  info: (message) => logToConsoleAndFile(message, 'info'),
+  error: (message) => logToConsoleAndFile(message, 'error'),
+  warn: (message) => logToConsoleAndFile(message, 'warn'),
+  debug: (message) => logToConsoleAndFile(message, 'debug'),
 };
-module.exports = {
-  info: (message) => logToFile(message, 'info'),
-  error: (message) => logToFile(message, 'error'),
-  warn: (message) => logToFile(message, 'warn'),
-  debug: (message) => logToFile(message, 'debug')
-};
+
 module.exports = logger;
