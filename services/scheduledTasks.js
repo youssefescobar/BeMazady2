@@ -14,17 +14,14 @@ const endExpiredAuctions = async () => {
     const expiredAuctions = await Auction.find({
       endDate: { $lte: now },
       status: "active",
-    })
-      .populate("seller")
-      .populate("item");
+    }).populate("seller");
 
     logger.info(`Found ${expiredAuctions.length} expired auctions to process`);
 
     for (const auction of expiredAuctions) {
       logger.info(`Processing auction: ${auction._id}`);
 
-      // Determine auction display name
-      const auctionName = auction.item?.name || auction.title || "Auction Item";
+      const auctionName = auction.title || "Auction Item";
 
       // Find the highest bid for this auction
       const highestBid = await Bid.findOne({ auction: auction._id })
@@ -56,7 +53,7 @@ const endExpiredAuctions = async () => {
           { model: "Auction", id: auction._id }
         );
 
-        // Notify other bidders they didn't win
+        // Notify other bidders
         const otherBidders = await Bid.find({
           auction: auction._id,
           bidder: { $ne: highestBid.bidder._id },
@@ -84,7 +81,7 @@ const endExpiredAuctions = async () => {
         );
       }
 
-      // Update only the necessary fields instead of saving the entire document
+      // Update only the necessary fields instead of saving the whole doc
       await Auction.updateOne({ _id: auction._id }, updateData);
 
       logger.info(`Auction ${auction._id} marked as completed`);
@@ -99,7 +96,7 @@ const endExpiredAuctions = async () => {
 const initScheduledTasks = (app) => {
   global.app = app;
 
-  // Run every 5 minutes - fixed from the original "every 1 minute"
+  // Run every 5 minutes
   cron.schedule("*/5 * * * *", () => {
     logger.info("Running scheduled task: endExpiredAuctions");
     endExpiredAuctions();
