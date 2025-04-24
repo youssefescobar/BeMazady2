@@ -55,6 +55,15 @@ Root Route:
 GET /
 Response: "Api is running ya tohamy"
 ```
+---
+
+## 🛡️ Authentication & Roles
+
+- JWT Auth with token expiry
+- Roles:
+  - **Admin** – full access
+  - **Seller** – manage auctions/items
+  - **Buyer** – place bids & orders
 
 ---
 
@@ -81,6 +90,31 @@ npm install
 
 Copy `.env.example` to `.env` and fill in your secrets.
 
+---
+
+### 📄 `.env.example`
+
+```env
+PORT=3000
+MONGO_URI=your_mongodb_uri
+JWT_SECRET=your_jwt_secret
+JWT_EXPIRE=1d
+
+MAILER_HOST=smtp.gmail.com
+MAILER_PORT=465
+MAILER_EMAIL=your_email@gmail.com
+MAILER_PASSWORD=your_email_app_password
+
+PAYMOB_API_KEY=your_paymob_api_key
+PAYMOB_INTEGRATION_ID=your_integration_id
+PAYMOB_IFRAME_ID=your_iframe_id
+PAYMOB_HMAC_SECRET=your_hmac_secret
+
+CLOUDINARY_CLOUD_NAME=your_cloudinary_name
+CLOUDINARY_API_KEY=your_cloudinary_key
+CLOUDINARY_API_SECRET=your_cloudinary_secret
+```
+
 ### 🚀 Run the App
 
 ```bash
@@ -93,22 +127,11 @@ npm start
 
 Each module (e.g., `Auction`, `User`, `Recommend`, etc.) is organized in its own route/controller/model structure, ensuring clean separation of concerns.
 
----
-
-## 🛡️ Authentication & Roles
-
-- JWT Auth with token expiry
-- Roles:
-  - **Admin** – full access
-  - **Seller** – manage auctions/items
-  - **Buyer** – place bids & orders
-
----
 
 ## 📧 Contact
 
 Have questions or want to collaborate?  
-📬 [coolgoot123@gmail.com](mailto:coolgoot123@gmail.com)
+📬 [youssef.hussain9000@gmail.com](mailto:youssef.hussain9000@gmail.com)
 
 ---
 
