@@ -53,6 +53,8 @@ app.use(compression());
 // });
 // app.use(limiter);
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Add this line to handle URL-encoded data
+
 app.use(morgan("dev"));
 
 // let redirectCounts = {};
@@ -68,10 +70,18 @@ app.use(morgan("dev"));
 //   next();
 // });
 app.use((err, req, res, next) => {
-  console.error('Redirect Error:', err);
-  trackError(err); // Your error tracking service
-  next(err);
+  console.error('Server Error:', err.message);
+
+  // Optional: if you want to differentiate custom errors
+  const statusCode = err.statusCode || 500;
+
+  res.status(statusCode).json({
+    status: "error",
+    message: err.message || "Internal Server Error",
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+  });
 });
+
 // API Routes
 app.use("/api/categories", CategoryRoute);
 app.use("/api/subcategories", SubcategoryRoute);
@@ -93,17 +103,19 @@ app.get('/', (req, res) => {
   res.send('Api is running ya tohamy');
 })
 app.get('/payment/success', (req, res) => {
-  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-  const queryString = Object.keys(req.query).length 
-    ? `?${new URLSearchParams(req.query).toString()}`
-    : '';
-  return res.redirect(`${frontendUrl}/payment/success${queryString}`);
+  return res.status(200).json({
+    status: "success",
+    message: "Payment successful",
+    data: req.query
+  });
 });
 
 app.get('/payment/failure', (req, res) => {
-  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-  const queryParams = new URLSearchParams(req.query).toString();
-  return res.redirect(`${frontendUrl}/payment/failure?${queryParams}`);
+  return res.status(200).json({
+    status: "failed",
+    message: "Payment failed",
+    data: req.query
+  });
 });
 // Handle route errors - ONLY ONE catch-all handler
 app.all("*", (req, res, next) => {
