@@ -6,7 +6,7 @@ const Transaction = require("../models/Transactions") // Changed from Transactio
 const Order = require("../models/Order")
 const User = require("../models/User")
 const { retryWithBackoff } = require("../utils/retry")
-const { PAYMOB_INTEGRATION_ID, PAYMOB_API_KEY, PAYMOB_IFRAME_ID, PAYMOB_HMAC_SECRET } = process.env // Access environment variable
+const { PAYMOB_INTEGRATION_ID, PAYMOB_API_KEY, PAYMOB_IFRAME_ID, PAYMOB_HMAC_SECRET, FRONTEND_URL } = process.env // Access environment variables
 
 
 // Get PayMob authentication token
@@ -357,38 +357,76 @@ exports.initializePayment = asyncHandler(async (req, res, next) => {
   }
 })
 
-// Process payment callback
+// Add validation function for HMAC
+function validateHmac(receivedHmac, params) {
+  try {
+    if (!PAYMOB_HMAC_SECRET) {
+      console.warn("HMAC validation skipped: Missing HMAC secret");
+      return true; // Skip validation if secret is not configured
+    }
+    
+    // Create a copy of params without the hmac
+    const paramsToValidate = { ...params };
+    delete paramsToValidate.hmac;
+    
+    // Sort keys alphabetically
+    const sortedKeys = Object.keys(paramsToValidate).sort();
+    
+    // Create string of key=value pairs
+    const concatenatedString = sortedKeys
+      .map(key => `${key}=${paramsToValidate[key]}`)
+      .join('&');
+    
+    // Generate HMAC
+    const crypto = require('crypto');
+    const calculatedHmac = crypto
+      .createHmac('sha512', PAYMOB_HMAC_SECRET)
+      .update(concatenatedString)
+      .digest('hex');
+    
+    return calculatedHmac === receivedHmac;
+  } catch (error) {
+    console.error("HMAC validation error:", error);
+    return false;
+  }
+}
+
+// Process payment callback - FIXED VERSION TO PREVENT REDIRECT LOOP
 exports.paymentCallback = asyncHandler(async (req, res, next) => {
   try {
     console.log("Payment callback received with query params:", req.query);
     const { hmac, transaction_id, order, success, amount_cents } = req.query;
 
+    // Ensure FRONTEND_URL is available
+    const frontendUrl = FRONTEND_URL || "http://localhost:3001"; // Fallback URL if env var is missing
+    
     // Validate required parameters
     if (!order) {
       console.error("Missing order parameter in callback");
-      return res.redirect(`/payment/failure?error=missing_order`);
+      return res.redirect(`${frontendUrl}/payment/failure?error=missing_order`);
     }
 
     // Verify HMAC if payment gateway requires it
     if (hmac && !validateHmac(hmac, req.query)) {
       console.error("Invalid HMAC signature");
-      return res.redirect(`/payment/failure?error=invalid_hmac&order=${order}`);
+      return res.redirect(`${frontendUrl}/payment/failure?error=invalid_hmac&order=${order}`);
     }
 
     // Process payment result
     if (success === "true") {
-      return await handleSuccessfulPayment(order, transaction_id, res);
+      return await handleSuccessfulPayment(order, transaction_id, res, frontendUrl);
     } else {
-      return await handleFailedPayment(order, transaction_id, res);
+      return await handleFailedPayment(order, transaction_id, res, frontendUrl);
     }
   } catch (error) {
     console.error("Payment callback error:", error);
-    return res.redirect(`/payment/failure?error=server_error`);
+    const frontendUrl = FRONTEND_URL || "http://localhost:3001";
+    return res.redirect(`${frontendUrl}/payment/failure?error=server_error`);
   }
 });
 
-// Helper function for successful payments
-async function handleSuccessfulPayment(orderId, transactionId, res) {
+// Helper function for successful payments - UPDATED WITH FRONTEND URL
+async function handleSuccessfulPayment(orderId, transactionId, res, frontendUrl) {
   try {
     console.log("Processing successful payment for order:", orderId);
     
@@ -396,7 +434,7 @@ async function handleSuccessfulPayment(orderId, transactionId, res) {
     const transaction = await Transaction.findOne({ gatewayOrderId: orderId });
     if (!transaction) {
       console.error("Transaction not found for order:", orderId);
-      return res.redirect(`/payment/failure?error=transaction_not_found`);
+      return res.redirect(`${frontendUrl}/payment/failure?error=transaction_not_found`);
     }
 
     // 2. Update transaction status
@@ -420,17 +458,17 @@ async function handleSuccessfulPayment(orderId, transactionId, res) {
       console.error("Error clearing cart:", err)
     );
 
-    // 5. Redirect to success page
-    return res.redirect(`/payment/success?transactionId=${transaction._id}`);
+    // 5. Redirect to success page on frontend
+    return res.redirect(`${frontendUrl}/payment/success?transactionId=${transaction._id}`);
 
   } catch (dbError) {
     console.error("Database error in successful payment:", dbError);
-    return res.redirect(`/payment/failure?error=processing_error&order=${orderId}`);
+    return res.redirect(`${frontendUrl}/payment/failure?error=processing_error&order=${orderId}`);
   }
 }
 
-// Helper function for failed payments
-async function handleFailedPayment(orderId, transactionId, res) {
+// Helper function for failed payments - UPDATED WITH FRONTEND URL
+async function handleFailedPayment(orderId, transactionId, res, frontendUrl) {
   try {
     console.log("Processing failed payment for order:", orderId);
     
@@ -443,11 +481,11 @@ async function handleFailedPayment(orderId, transactionId, res) {
       }
     );
 
-    return res.redirect(`/payment/failure?transactionId=${transactionId || "unknown"}`);
+    return res.redirect(`${frontendUrl}/payment/failure?transactionId=${transactionId || "unknown"}`);
 
   } catch (updateError) {
     console.error("Error updating failed transaction:", updateError);
-    return res.redirect(`/payment/failure?error=update_failed&order=${orderId}`);
+    return res.redirect(`${frontendUrl}/payment/failure?error=update_failed&order=${orderId}`);
   }
 }
 
@@ -459,6 +497,7 @@ async function clearUserCart(userId) {
   );
   console.log("Cart cleared for user:", userId);
 }
+
 // Get payment methods
 exports.getPaymentMethods = asyncHandler(async (req, res) => {
   try {
