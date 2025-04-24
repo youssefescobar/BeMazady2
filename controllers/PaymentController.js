@@ -6,7 +6,7 @@ const Transaction = require("../models/Transactions") // Changed from Transactio
 const Order = require("../models/Order")
 const User = require("../models/User")
 const { retryWithBackoff } = require("../utils/retry")
-const { PAYMOB_INTEGRATION_ID, PAYMOB_API_KEY, PAYMOB_IFRAME_ID, PAYMOB_HMAC_SECRET } = process.env // Access environment variable
+const { PAYMOB_INTEGRATION_ID, PAYMOB_API_KEY, PAYMOB_IFRAME_ID, PAYMOB_HMAC_SECRET, FRONTEND_URL } = process.env // Access environment variables
 
 
 // Get PayMob authentication token
@@ -357,38 +357,114 @@ exports.initializePayment = asyncHandler(async (req, res, next) => {
   }
 })
 
-// Process payment callback
+// Add validation function for HMAC
+function validateHmac(receivedHmac, params) {
+  try {
+    if (!PAYMOB_HMAC_SECRET) {
+      console.warn("HMAC validation skipped: Missing HMAC secret");
+      return true; // Skip validation if secret is not configured
+    }
+    
+    // Create a copy of params without the hmac
+    const paramsToValidate = { ...params };
+    delete paramsToValidate.hmac;
+    
+    // Sort keys alphabetically
+    const sortedKeys = Object.keys(paramsToValidate).sort();
+    
+    // Create string of key=value pairs
+    const concatenatedString = sortedKeys
+      .map(key => `${key}=${paramsToValidate[key]}`)
+      .join('&');
+    
+    // Generate HMAC
+    const crypto = require('crypto');
+    const calculatedHmac = crypto
+      .createHmac('sha512', PAYMOB_HMAC_SECRET)
+      .update(concatenatedString)
+      .digest('hex');
+    
+    return calculatedHmac === receivedHmac;
+  } catch (error) {
+    console.error("HMAC validation error:", error);
+    return false;
+  }
+}
+
+// Process payment callback - FIXED VERSION TO PREVENT REDIRECT LOOP
+// Process payment callback - JSON RESPONSE ONLY VERSION
 exports.paymentCallback = asyncHandler(async (req, res, next) => {
   try {
-    console.log("Payment callback received with query params:", req.query);
-    const { hmac, transaction_id, order, success, amount_cents } = req.query;
-
+    // Enhanced logging for debugging
+    console.log("Payment callback received");
+    console.log("Full URL:", req.originalUrl);
+    console.log("Query params:", req.query);
+    
+    // Extract all possible ways the parameters might be present
+    const orderId = req.query.order || 
+                   (req.params && req.params.order) ||
+                   (req.query['?order'] || ''); // Sometimes Express adds '?' prefix
+    
+    const transactionId = req.query.transaction_id || 
+                         (req.params && req.params.transaction_id);
+    
+    const success = req.query.success || 
+                   (req.params && req.params.success);
+    
+    const hmac = req.query.hmac || 
+                (req.params && req.params.hmac);
+    
+    console.log("Extracted params:", { orderId, transactionId, success, hmac });
+    
+    // Handle encoded URL parameters
+    if (!orderId && req.originalUrl) {
+      // Try to manually extract from URL if Express parsing failed
+      const urlParams = new URLSearchParams(req.originalUrl.split('?')[1]);
+      const manualOrderId = urlParams.get('order');
+      if (manualOrderId) {
+        console.log("Manually extracted order ID:", manualOrderId);
+        orderId = manualOrderId;
+      }
+    }
+    
     // Validate required parameters
-    if (!order) {
+    if (!orderId) {
       console.error("Missing order parameter in callback");
-      return res.redirect(`/payment/failure?error=missing_order`);
+      return res.status(400).json({
+        status: "error",
+        message: "Missing order parameter in callback"
+      });
     }
 
     // Verify HMAC if payment gateway requires it
     if (hmac && !validateHmac(hmac, req.query)) {
       console.error("Invalid HMAC signature");
-      return res.redirect(`/payment/failure?error=invalid_hmac&order=${order}`);
+      return res.status(400).json({
+        status: "error",
+        message: "Invalid HMAC signature",
+        orderId: orderId
+      });
     }
 
-    // Process payment result
-    if (success === "true") {
-      return await handleSuccessfulPayment(order, transaction_id, res);
+    // Process payment result based on success parameter
+    // Handle case insensitivity for "true" value
+    if (success && (success.toLowerCase() === "true")) {
+      return await handleSuccessfulPaymentJson(orderId, transactionId, res);
     } else {
-      return await handleFailedPayment(order, transaction_id, res);
+      return await handleFailedPaymentJson(orderId, transactionId, res);
     }
   } catch (error) {
     console.error("Payment callback error:", error);
-    return res.redirect(`/payment/failure?error=server_error`);
+    return res.status(500).json({
+      status: "error",
+      message: "Server error processing payment callback",
+      error: error.message
+    });
   }
 });
 
-// Helper function for successful payments
-async function handleSuccessfulPayment(orderId, transactionId, res) {
+// Helper function for successful payments - JSON RESPONSE ONLY
+async function handleSuccessfulPaymentJson(orderId, transactionId, res) {
   try {
     console.log("Processing successful payment for order:", orderId);
     
@@ -396,7 +472,11 @@ async function handleSuccessfulPayment(orderId, transactionId, res) {
     const transaction = await Transaction.findOne({ gatewayOrderId: orderId });
     if (!transaction) {
       console.error("Transaction not found for order:", orderId);
-      return res.redirect(`/payment/failure?error=transaction_not_found`);
+      return res.status(404).json({
+        status: "error",
+        message: "Transaction not found for this order ID",
+        orderId: orderId
+      });
     }
 
     // 2. Update transaction status
@@ -420,44 +500,68 @@ async function handleSuccessfulPayment(orderId, transactionId, res) {
       console.error("Error clearing cart:", err)
     );
 
-    // 5. Redirect to success page
-    return res.redirect(`/payment/success?transactionId=${transaction._id}`);
+    // 5. Return success JSON response
+    return res.status(200).json({
+      status: "success",
+      message: "Payment processed successfully",
+      data: {
+        transactionId: transaction._id.toString(),
+        orderId: createdOrder._id.toString(),
+        paymentStatus: "completed",
+        amount: transaction.amount,
+        paymentMethod: transaction.paymentMethod,
+        gatewayTransactionId: transactionId,
+        timestamp: transaction.completedAt
+      }
+    });
 
   } catch (dbError) {
     console.error("Database error in successful payment:", dbError);
-    return res.redirect(`/payment/failure?error=processing_error&order=${orderId}`);
+    return res.status(500).json({
+      status: "error",
+      message: "Error processing successful payment",
+      error: dbError.message,
+      orderId: orderId
+    });
   }
 }
 
-// Helper function for failed payments
-async function handleFailedPayment(orderId, transactionId, res) {
+// Helper function for failed payments - JSON RESPONSE ONLY
+async function handleFailedPaymentJson(orderId, transactionId, res) {
   try {
     console.log("Processing failed payment for order:", orderId);
     
-    await Transaction.findOneAndUpdate(
+    const transaction = await Transaction.findOneAndUpdate(
       { gatewayOrderId: orderId },
       { 
         status: "failed", 
         gatewayTransactionId: transactionId,
         failedAt: new Date() 
-      }
+      },
+      { new: true } // Return updated document
     );
 
-    return res.redirect(`/payment/failure?transactionId=${transactionId || "unknown"}`);
+    // Return failure JSON response
+    return res.status(200).json({
+      status: "failed",
+      message: "Payment failed",
+      data: {
+        transactionId: transaction ? transaction._id.toString() : null,
+        gatewayOrderId: orderId,
+        gatewayTransactionId: transactionId || "unknown",
+        timestamp: new Date().toISOString()
+      }
+    });
 
   } catch (updateError) {
     console.error("Error updating failed transaction:", updateError);
-    return res.redirect(`/payment/failure?error=update_failed&order=${orderId}`);
+    return res.status(500).json({
+      status: "error",
+      message: "Error updating failed transaction",
+      error: updateError.message,
+      orderId: orderId
+    });
   }
-}
-
-// Utility function to clear user cart
-async function clearUserCart(userId) {
-  await Cart.findOneAndUpdate(
-    { user: userId }, 
-    { items: [], totalPrice: 0 }
-  );
-  console.log("Cart cleared for user:", userId);
 }
 // Get payment methods
 exports.getPaymentMethods = asyncHandler(async (req, res) => {
