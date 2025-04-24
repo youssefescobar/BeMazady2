@@ -392,41 +392,79 @@ function validateHmac(receivedHmac, params) {
 }
 
 // Process payment callback - FIXED VERSION TO PREVENT REDIRECT LOOP
+// Process payment callback - JSON RESPONSE ONLY VERSION
 exports.paymentCallback = asyncHandler(async (req, res, next) => {
   try {
-    console.log("Payment callback received with query params:", req.query);
-    const { hmac, transaction_id, order, success, amount_cents } = req.query;
-
-    // Ensure FRONTEND_URL is available
-    const frontendUrl = FRONTEND_URL || "http://localhost:3001"; // Fallback URL if env var is missing
+    // Enhanced logging for debugging
+    console.log("Payment callback received");
+    console.log("Full URL:", req.originalUrl);
+    console.log("Query params:", req.query);
+    
+    // Extract all possible ways the parameters might be present
+    const orderId = req.query.order || 
+                   (req.params && req.params.order) ||
+                   (req.query['?order'] || ''); // Sometimes Express adds '?' prefix
+    
+    const transactionId = req.query.transaction_id || 
+                         (req.params && req.params.transaction_id);
+    
+    const success = req.query.success || 
+                   (req.params && req.params.success);
+    
+    const hmac = req.query.hmac || 
+                (req.params && req.params.hmac);
+    
+    console.log("Extracted params:", { orderId, transactionId, success, hmac });
+    
+    // Handle encoded URL parameters
+    if (!orderId && req.originalUrl) {
+      // Try to manually extract from URL if Express parsing failed
+      const urlParams = new URLSearchParams(req.originalUrl.split('?')[1]);
+      const manualOrderId = urlParams.get('order');
+      if (manualOrderId) {
+        console.log("Manually extracted order ID:", manualOrderId);
+        orderId = manualOrderId;
+      }
+    }
     
     // Validate required parameters
-    if (!order) {
+    if (!orderId) {
       console.error("Missing order parameter in callback");
-      return res.redirect(`${frontendUrl}/payment/failure?error=missing_order`);
+      return res.status(400).json({
+        status: "error",
+        message: "Missing order parameter in callback"
+      });
     }
 
     // Verify HMAC if payment gateway requires it
     if (hmac && !validateHmac(hmac, req.query)) {
       console.error("Invalid HMAC signature");
-      return res.redirect(`${frontendUrl}/payment/failure?error=invalid_hmac&order=${order}`);
+      return res.status(400).json({
+        status: "error",
+        message: "Invalid HMAC signature",
+        orderId: orderId
+      });
     }
 
-    // Process payment result
-    if (success === "true") {
-      return await handleSuccessfulPayment(order, transaction_id, res, frontendUrl);
+    // Process payment result based on success parameter
+    // Handle case insensitivity for "true" value
+    if (success && (success.toLowerCase() === "true")) {
+      return await handleSuccessfulPaymentJson(orderId, transactionId, res);
     } else {
-      return await handleFailedPayment(order, transaction_id, res, frontendUrl);
+      return await handleFailedPaymentJson(orderId, transactionId, res);
     }
   } catch (error) {
     console.error("Payment callback error:", error);
-    const frontendUrl = FRONTEND_URL || "http://localhost:3001";
-    return res.redirect(`${frontendUrl}/payment/failure?error=server_error`);
+    return res.status(500).json({
+      status: "error",
+      message: "Server error processing payment callback",
+      error: error.message
+    });
   }
 });
 
-// Helper function for successful payments - UPDATED WITH FRONTEND URL
-async function handleSuccessfulPayment(orderId, transactionId, res, frontendUrl) {
+// Helper function for successful payments - JSON RESPONSE ONLY
+async function handleSuccessfulPaymentJson(orderId, transactionId, res) {
   try {
     console.log("Processing successful payment for order:", orderId);
     
@@ -434,7 +472,11 @@ async function handleSuccessfulPayment(orderId, transactionId, res, frontendUrl)
     const transaction = await Transaction.findOne({ gatewayOrderId: orderId });
     if (!transaction) {
       console.error("Transaction not found for order:", orderId);
-      return res.redirect(`${frontendUrl}/payment/failure?error=transaction_not_found`);
+      return res.status(404).json({
+        status: "error",
+        message: "Transaction not found for this order ID",
+        orderId: orderId
+      });
     }
 
     // 2. Update transaction status
@@ -458,46 +500,69 @@ async function handleSuccessfulPayment(orderId, transactionId, res, frontendUrl)
       console.error("Error clearing cart:", err)
     );
 
-    // 5. Redirect to success page on frontend
-    return res.redirect(`${frontendUrl}/payment/success?transactionId=${transaction._id}`);
+    // 5. Return success JSON response
+    return res.status(200).json({
+      status: "success",
+      message: "Payment processed successfully",
+      data: {
+        transactionId: transaction._id.toString(),
+        orderId: createdOrder._id.toString(),
+        paymentStatus: "completed",
+        amount: transaction.amount,
+        paymentMethod: transaction.paymentMethod,
+        gatewayTransactionId: transactionId,
+        timestamp: transaction.completedAt
+      }
+    });
 
   } catch (dbError) {
     console.error("Database error in successful payment:", dbError);
-    return res.redirect(`${frontendUrl}/payment/failure?error=processing_error&order=${orderId}`);
+    return res.status(500).json({
+      status: "error",
+      message: "Error processing successful payment",
+      error: dbError.message,
+      orderId: orderId
+    });
   }
 }
 
-// Helper function for failed payments - UPDATED WITH FRONTEND URL
-async function handleFailedPayment(orderId, transactionId, res, frontendUrl) {
+// Helper function for failed payments - JSON RESPONSE ONLY
+async function handleFailedPaymentJson(orderId, transactionId, res) {
   try {
     console.log("Processing failed payment for order:", orderId);
     
-    await Transaction.findOneAndUpdate(
+    const transaction = await Transaction.findOneAndUpdate(
       { gatewayOrderId: orderId },
       { 
         status: "failed", 
         gatewayTransactionId: transactionId,
         failedAt: new Date() 
-      }
+      },
+      { new: true } // Return updated document
     );
 
-    return res.redirect(`${frontendUrl}/payment/failure?transactionId=${transactionId || "unknown"}`);
+    // Return failure JSON response
+    return res.status(200).json({
+      status: "failed",
+      message: "Payment failed",
+      data: {
+        transactionId: transaction ? transaction._id.toString() : null,
+        gatewayOrderId: orderId,
+        gatewayTransactionId: transactionId || "unknown",
+        timestamp: new Date().toISOString()
+      }
+    });
 
   } catch (updateError) {
     console.error("Error updating failed transaction:", updateError);
-    return res.redirect(`${frontendUrl}/payment/failure?error=update_failed&order=${orderId}`);
+    return res.status(500).json({
+      status: "error",
+      message: "Error updating failed transaction",
+      error: updateError.message,
+      orderId: orderId
+    });
   }
 }
-
-// Utility function to clear user cart
-async function clearUserCart(userId) {
-  await Cart.findOneAndUpdate(
-    { user: userId }, 
-    { items: [], totalPrice: 0 }
-  );
-  console.log("Cart cleared for user:", userId);
-}
-
 // Get payment methods
 exports.getPaymentMethods = asyncHandler(async (req, res) => {
   try {
