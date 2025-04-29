@@ -1,15 +1,23 @@
-const User = require("../models/User")
-const bcrypt = require("bcryptjs")
-const jwt = require("jsonwebtoken")
-const crypto = require("crypto")
-const asyncHandler = require("express-async-handler")
-const ApiError = require("../utils/ApiError")
-const sendEmail = require("../utils/SendEmail")
+const User = require("../models/User");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+const asyncHandler = require("express-async-handler");
+const ApiError = require("../utils/ApiError");
+const sendEmail = require("../utils/SendEmail");
 
-// sign up - Public
+// sign up (everything) - Public
 const Signup = asyncHandler(async (req, res, next) => {
-  const { first_name, last_name, username, email, password, phone_number, national_id } = req.body
-  const hashedPassword = await bcrypt.hash(password, 10)
+  const {
+    first_name,
+    last_name,
+    username,
+    email,
+    password,
+    phone_number,
+    national_id,
+  } = req.body;
+  const hashedPassword = await bcrypt.hash(password, 10);
 
   const user = await User.create({
     first_name,
@@ -19,71 +27,238 @@ const Signup = asyncHandler(async (req, res, next) => {
     password: hashedPassword,
     phone_number,
     national_id,
-  })
+  });
 
   // Use a valid expiration value - "30d" means 30 days
-  const token = jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || "30d",
-  })
+  const token = jwt.sign(
+    { userId: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: process.env.JWT_EXPIRE || "30d",
+    }
+  );
   res.status(201).json({
     success: true,
     data: user,
     token: token,
-  })
-})
+  });
+});
 
-// Login - Public
+// Login (everything) - Public
 const login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body
+  const { email, password } = req.body;
 
   // Find user by email
-  const user = await User.findOne({ email })
+  const user = await User.findOne({ email });
   if (!user) {
-    return res.status(401).json({ success: false, message: "Invalid credentials" })
+    return res
+      .status(401)
+      .json({ success: false, message: "Invalid credentials" });
   }
 
   // Compare passwords
-  const isMatch = await bcrypt.compare(password, user.password)
+  const isMatch = await bcrypt.compare(password, user.password);
   if (!isMatch) {
-    return res.status(401).json({ success: false, message: "Invalid credentials" })
+    return res
+      .status(401)
+      .json({ success: false, message: "Invalid credentials" });
   }
 
   // Generate JWT token with valid expiration
-  const token = jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || "30d",
-  })
+  const token = jwt.sign(
+    { userId: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: process.env.JWT_EXPIRE || "30d",
+    }
+  );
 
   res.status(200).json({
     success: true,
     token,
     data: { id: user._id, email: user.email, username: user.username },
-  })
-})
+  });
+});
 
+const registerBuyer = asyncHandler(async (req, res, next) => {
+  const {
+    first_name,
+    last_name,
+    username,
+    email,
+    password,
+    phone_number,
+    national_id,
+  } = req.body;
+
+  // Check if required fields exist
+  if (
+    !first_name ||
+    !last_name ||
+    !username ||
+    !email ||
+    !password ||
+    !phone_number ||
+    !national_id
+  ) {
+    return next(new ApiError("Please provide all required fields", 400));
+  }
+
+  // Check if user already exists
+  const userExists = await User.findOne({
+    $or: [{ email }, { username }, { phone_number }, { national_id }],
+  });
+
+  if (userExists) {
+    return next(new ApiError("User already exists", 400));
+  }
+
+  // Hash password
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(password, salt);
+
+  // Create user
+  const user = await User.create({
+    first_name,
+    last_name,
+    username,
+    email,
+    password: hashedPassword,
+    phone_number,
+    national_id,
+    role: "buyer",
+  });
+  const token = jwt.sign(
+    { userId: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: process.env.JWT_EXPIRE || "30d",
+    }
+  );
+
+  if (user) {
+    res.status(201).json({
+      success: true,
+      data: {
+        _id: user._id,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        phone_number: user.phone_number,
+        token: token,
+      },
+    });
+  } else {
+    return next(new ApiError("Invalid user data", 400));
+  }
+});
+
+const registerSeller = asyncHandler(async (req, res, next) => {
+  const {
+    first_name,
+    last_name,
+    username,
+    email,
+    password,
+    phone_number,
+    national_id,
+  } = req.body;
+
+  // Check if required fields exist
+  if (
+    !first_name ||
+    !last_name ||
+    !username ||
+    !email ||
+    !password ||
+    !phone_number ||
+    !national_id
+  ) {
+    return next(new ApiError("Please provide all required fields", 400));
+  }
+
+  // Check if user already exists
+  const userExists = await User.findOne({
+    $or: [{ email }, { username }, { phone_number }, { national_id }],
+  });
+
+  if (userExists) {
+    return next(new ApiError("User already exists", 400));
+  }
+
+  // Hash password
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(password, salt);
+
+  // Create user with role as seller
+  const userData = {
+    first_name,
+    last_name,
+    username,
+    email,
+    password: hashedPassword,
+    phone_number,
+    national_id,
+    role: "seller",
+  };
+
+  const user = await User.create(userData);
+  const token = jwt.sign(
+    { userId: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: process.env.JWT_EXPIRE || "30d",
+    }
+  );
+  if (user) {
+    res.status(201).json({
+      success: true,
+      data: {
+        _id: user._id,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        phone_number: user.phone_number,
+        token: token,
+      },
+    });
+  } else {
+    return next(new ApiError("Invalid user data", 400));
+  }
+});
 // Forgot paassword
 const Forgotpassword = asyncHandler(async (req, res, next) => {
-  const user = await User.findOne({ email: req.body.email })
+  const user = await User.findOne({ email: req.body.email });
   if (!user) {
-    return next(new ApiError("No user with given email", 404))
+    return next(new ApiError("No user with given email", 404));
   }
 
   // Generate a 6-digit numeric reset code
-  const resetToken = Math.floor(100000 + Math.random() * 900000).toString()
+  const resetToken = Math.floor(100000 + Math.random() * 900000).toString();
 
   // Hash the token for security
-  const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex")
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
 
   // Store hashed token in DB
-  user.password_rest_code = hashedToken
-  user.password_rest_expire = Date.now() + 10 * 60 * 1000 // 10 minutes expiry
-  user.password_rest_verified = false
+  user.password_rest_code = hashedToken;
+  user.password_rest_expire = Date.now() + 10 * 60 * 1000; // 10 minutes expiry
+  user.password_rest_verified = false;
 
-  await user.save()
+  await user.save();
 
   const message = `
   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px; background-color: #f9f9f9;">
     <h2 style="color: #333; text-align: center;">Password Reset Request</h2>
-    <p style="color: #555; font-size: 16px;">Hello <strong>${user.username}</strong>,</p>
+    <p style="color: #555; font-size: 16px;">Hello <strong>${
+      user.username
+    }</strong>,</p>
     <p style="color: #555; font-size: 16px;">
       We received a request to reset your password. Please use the verification code below to proceed:
     </p>
@@ -103,71 +278,86 @@ const Forgotpassword = asyncHandler(async (req, res, next) => {
       &copy; ${new Date().getFullYear()} BeMazady. All rights reserved.
     </p>
   </div>
-`
+`;
 
   try {
     await sendEmail({
       email: user.email,
       subject: "Password Reset Request",
       message,
-    })
+    });
 
     res.status(200).json({
       success: true,
       message: "Password reset code sent to email",
-    })
+    });
   } catch (error) {
     // Remove token if email fails
-    user.password_rest_code = undefined
-    user.password_rest_expire = undefined
-    await user.save({ validateBeforeSave: false })
+    user.password_rest_code = undefined;
+    user.password_rest_expire = undefined;
+    await user.save({ validateBeforeSave: false });
 
-    return next(new ApiError("Email could not be sent", 500))
+    return next(new ApiError("Email could not be sent", 500));
   }
-})
+});
 
 // Verfiy code
 const Verifycode = asyncHandler(async (req, res, next) => {
-  const hashedRestCode = crypto.createHash("sha256").update(req.body.resetCode).digest("hex")
+  const hashedRestCode = crypto
+    .createHash("sha256")
+    .update(req.body.resetCode)
+    .digest("hex");
   const user = await User.findOne({
     password_rest_code: hashedRestCode,
     password_rest_expire: { $gt: Date.now() },
-  })
+  });
   if (!user) {
-    return next(new ApiError("Reset Code invalid or expried"))
+    return next(new ApiError("Reset Code invalid or expried"));
   }
-  user.password_rest_verified = true
-  await user.save()
+  user.password_rest_verified = true;
+  await user.save();
   res.status(200).json({
     success: true,
-  })
-})
+  });
+});
 
 // rest password
 const Resetpassword = asyncHandler(async (req, res, next) => {
   const user = await User.findOne({
     email: req.body.email,
-  })
+  });
   if (!user) {
-    return next(new ApiError("No user with that email", 404))
+    return next(new ApiError("No user with that email", 404));
   }
   if (!user.password_rest_verified) {
-    return next(new ApiError("Rest code is not verfied", 400))
+    return next(new ApiError("Rest code is not verfied", 400));
   }
-  const hashedPassword = await bcrypt.hash(req.body.newPassword, 10)
-  user.password = hashedPassword
-  await user.save()
+  const hashedPassword = await bcrypt.hash(req.body.newPassword, 10);
+  user.password = hashedPassword;
+  await user.save();
 
   // Generate JWT token with valid expiration
-  const token = jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || "30d",
-  })
+  const token = jwt.sign(
+    { userId: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: process.env.JWT_EXPIRE || "30d",
+    }
+  );
 
   // Send success response with token
   res.status(200).json({
     success: true,
     message: "Password reset successfully",
     token,
-  })
-})
-module.exports = { Signup, login, Forgotpassword, Verifycode, Resetpassword }
+  });
+});
+module.exports = {
+  Signup,
+  login,
+  registerBuyer,
+  registerSeller,
+  Forgotpassword,
+  Verifycode,
+  Resetpassword,
+};

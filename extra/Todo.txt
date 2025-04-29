@@ -4,7 +4,7 @@ Todo:
 
 1. Socket for irl
 2. Ai (recommendation , img , nlp)
-3. reverse auction 
+
 
 6. user interaction model for recommendation system (fl a5er)
 
@@ -14,7 +14,6 @@ not important:
 1. coupouns
 2. discounts from seller
 
-1. check all endpoint to see if i missed something
 2. google register and login
 
 
