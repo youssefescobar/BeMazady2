@@ -17,7 +17,13 @@ const Signup = asyncHandler(async (req, res, next) => {
     phone_number,
     national_id,
   } = req.body;
+
   const hashedPassword = await bcrypt.hash(password, 10);
+  const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const hashedVerificationCode = crypto
+    .createHash("sha256")
+    .update(verificationCode)
+    .digest("hex");
 
   const user = await User.create({
     first_name,
@@ -27,9 +33,9 @@ const Signup = asyncHandler(async (req, res, next) => {
     password: hashedPassword,
     phone_number,
     national_id,
+    emailVerificationCode: hashedVerificationCode,
+    emailVerificationExpire: Date.now() + 10 * 60 * 1000, // 10 minutes
   });
-
-  // Use a valid expiration value - "30d" means 30 days
   const token = jwt.sign(
     { userId: user._id, role: user.role },
     process.env.JWT_SECRET,
@@ -37,11 +43,29 @@ const Signup = asyncHandler(async (req, res, next) => {
       expiresIn: process.env.JWT_EXPIRE || "30d",
     }
   );
+  const message = `
+    <h3>Welcome to BeMazady!</h3>
+    <p>Here is your verification code:</p>
+    <h2 style="color: blue;">${verificationCode}</h2>
+    <p>This code will expire in 10 minutes.</p>
+  `;
+
+  try {
+    await sendEmail({
+      email: user.email,
+      subject: "Verify Your Email",
+      message,
+    });
+
   res.status(201).json({
     success: true,
-    data: user,
-    token: token,
+      message: "Signup successful. Please verify your email to activate your account.",
+      token: token
   });
+  } catch (error) {
+    await User.findByIdAndDelete(user._id); // Cleanup if email fails
+    return next(new ApiError("Could not send verification email", 500));
+  }
 });
 
 // Login (everything) - Public
@@ -352,6 +376,35 @@ const Resetpassword = asyncHandler(async (req, res, next) => {
     token,
   });
 });
+
+// VerifyEmail Controller
+const VerifyEmail = asyncHandler(async (req, res, next) => {
+  const { email, code } = req.body;
+
+  const hashedCode = crypto.createHash("sha256").update(code).digest("hex");
+
+  const user = await User.findOne({
+    email,
+    emailVerificationCode: hashedCode,
+    emailVerificationExpire: { $gt: Date.now() },
+  });
+
+  if (!user) {
+    return next(new ApiError("Invalid or expired verification code, Email", 400));
+  }
+
+  user.verified = true;
+  user.emailVerificationCode = undefined;
+  user.emailVerificationExpire = undefined;
+
+  await user.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Email verified successfully",
+  });
+});
+
 module.exports = {
   Signup,
   login,
@@ -360,4 +413,5 @@ module.exports = {
   Forgotpassword,
   Verifycode,
   Resetpassword,
+  VerifyEmail,
 };
