@@ -229,12 +229,14 @@ const Resetpassword = asyncHandler(async (req, res, next) => {
 
 // VerifyEmail Controller
 const VerifyEmail = asyncHandler(async (req, res, next) => {
-  const { email, code } = req.body;
-
+  const { code } = req.body;
+  if (!code) {
+    return next(new ApiError("Verification code is required", 400));
+  }
   const hashedCode = crypto.createHash("sha256").update(code).digest("hex");
 
   const user = await User.findOne({
-    email,
+    _id: req.userId,
     emailVerificationCode: hashedCode,
     emailVerificationExpire: { $gt: Date.now() },
   });
@@ -255,6 +257,53 @@ const VerifyEmail = asyncHandler(async (req, res, next) => {
   });
 });
 
+const resendVerificationCode = asyncHandler(async (req, res, next) => {
+  const user = await User.findById(req.userId);
+
+  if (!user) {
+    return next(new ApiError("No user with given email", 404));
+  }
+
+  if (user.verified) {
+    return next(new ApiError("Email is already verified", 400));
+  }
+
+  const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const hashedCode = crypto.createHash("sha256").update(verificationCode).digest("hex");
+
+  user.emailVerificationCode = hashedCode;
+  user.emailVerificationExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+  await user.save();
+
+  const message = `
+  <div style="font-family: Arial, sans-serif; padding: 20px;">
+    <h2>Resend Email Verification</h2>
+    <p>Hi ${user.username}, here is your new email verification code:</p>
+    <div style="font-size: 22px; font-weight: bold;">${verificationCode}</div>
+    <p>This code will expire in 10 minutes.</p>
+  </div>`;
+
+  try {
+    await sendEmail({
+      email: user.email,
+      subject: "Email Verification Code (Resend)",
+      message,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Verification code resent to your email",
+    });
+  } catch (error) {
+    user.emailVerificationCode = undefined;
+    user.emailVerificationExpire = undefined;
+    await user.save({ validateBeforeSave: false });
+
+    return next(new ApiError("Email could not be sent", 500));
+  }
+});
+
+
 module.exports = {
   Signup,
   login,
@@ -262,4 +311,5 @@ module.exports = {
   Verifycode,
   Resetpassword,
   VerifyEmail,
+  resendVerificationCode
 };
