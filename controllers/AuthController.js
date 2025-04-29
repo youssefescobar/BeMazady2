@@ -57,11 +57,11 @@ const Signup = asyncHandler(async (req, res, next) => {
       message,
     });
 
-  res.status(201).json({
-    success: true,
+    res.status(201).json({
+      success: true,
       message: "Signup successful. Please verify your email to activate your account.",
       token: token
-  });
+    });
   } catch (error) {
     await User.findByIdAndDelete(user._id); // Cleanup if email fails
     return next(new ApiError("Could not send verification email", 500));
@@ -104,156 +104,6 @@ const login = asyncHandler(async (req, res) => {
   });
 });
 
-const registerBuyer = asyncHandler(async (req, res, next) => {
-  const {
-    first_name,
-    last_name,
-    username,
-    email,
-    password,
-    phone_number,
-    national_id,
-  } = req.body;
-
-  // Check if required fields exist
-  if (
-    !first_name ||
-    !last_name ||
-    !username ||
-    !email ||
-    !password ||
-    !phone_number ||
-    !national_id
-  ) {
-    return next(new ApiError("Please provide all required fields", 400));
-  }
-
-  // Check if user already exists
-  const userExists = await User.findOne({
-    $or: [{ email }, { username }, { phone_number }, { national_id }],
-  });
-
-  if (userExists) {
-    return next(new ApiError("User already exists", 400));
-  }
-
-  // Hash password
-  const salt = await bcrypt.genSalt(10);
-  const hashedPassword = await bcrypt.hash(password, salt);
-
-  // Create user
-  const user = await User.create({
-    first_name,
-    last_name,
-    username,
-    email,
-    password: hashedPassword,
-    phone_number,
-    national_id,
-    role: "buyer",
-  });
-  const token = jwt.sign(
-    { userId: user._id, role: user.role },
-    process.env.JWT_SECRET,
-    {
-      expiresIn: process.env.JWT_EXPIRE || "30d",
-    }
-  );
-
-  if (user) {
-    res.status(201).json({
-      success: true,
-      data: {
-        _id: user._id,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        phone_number: user.phone_number,
-        token: token,
-      },
-    });
-  } else {
-    return next(new ApiError("Invalid user data", 400));
-  }
-});
-
-const registerSeller = asyncHandler(async (req, res, next) => {
-  const {
-    first_name,
-    last_name,
-    username,
-    email,
-    password,
-    phone_number,
-    national_id,
-  } = req.body;
-
-  // Check if required fields exist
-  if (
-    !first_name ||
-    !last_name ||
-    !username ||
-    !email ||
-    !password ||
-    !phone_number ||
-    !national_id
-  ) {
-    return next(new ApiError("Please provide all required fields", 400));
-  }
-
-  // Check if user already exists
-  const userExists = await User.findOne({
-    $or: [{ email }, { username }, { phone_number }, { national_id }],
-  });
-
-  if (userExists) {
-    return next(new ApiError("User already exists", 400));
-  }
-
-  // Hash password
-  const salt = await bcrypt.genSalt(10);
-  const hashedPassword = await bcrypt.hash(password, salt);
-
-  // Create user with role as seller
-  const userData = {
-    first_name,
-    last_name,
-    username,
-    email,
-    password: hashedPassword,
-    phone_number,
-    national_id,
-    role: "seller",
-  };
-
-  const user = await User.create(userData);
-  const token = jwt.sign(
-    { userId: user._id, role: user.role },
-    process.env.JWT_SECRET,
-    {
-      expiresIn: process.env.JWT_EXPIRE || "30d",
-    }
-  );
-  if (user) {
-    res.status(201).json({
-      success: true,
-      data: {
-        _id: user._id,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        phone_number: user.phone_number,
-        token: token,
-      },
-    });
-  } else {
-    return next(new ApiError("Invalid user data", 400));
-  }
-});
 // Forgot paassword
 const Forgotpassword = asyncHandler(async (req, res, next) => {
   const user = await User.findOne({ email: req.body.email });
@@ -408,8 +258,6 @@ const VerifyEmail = asyncHandler(async (req, res, next) => {
 module.exports = {
   Signup,
   login,
-  registerBuyer,
-  registerSeller,
   Forgotpassword,
   Verifycode,
   Resetpassword,

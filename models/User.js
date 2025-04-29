@@ -20,6 +20,9 @@ const UserSchema = new mongoose.Schema(
     password_rest_code: String,
     password_rest_expire: Date,
     password_rest_verified: Boolean,
+    verified: { type: Boolean, default: false },
+    emailVerificationCode: { type: String },
+    emailVerificationExpire: { type: Date },
   },
   {
     timestamps: true,
