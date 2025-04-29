@@ -1,4 +1,6 @@
-# BeMazady 🧠🛒
+#     <p align="center">BeMazady 🧠🛒 </p>
+
+![Logo](extra/logo.jpg)
 
 **BeMazady** is an AI-enhanced online auction and e-commerce backend system. It enables buyers and sellers to interact in real-time auctions or traditional purchases, supported by intelligent recommendations and automated content verification.
 
