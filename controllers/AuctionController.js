@@ -169,6 +169,106 @@ const placeBid = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: bid });
 });
 
+const buyNowAuction = asyncHandler(async (req, res) => {
+  try {
+    const auction = await Auction.findById(req.params.id)
+      .populate("seller", "username _id");
+
+    if (!auction) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Auction not found" });
+    }
+
+    // Check if auction is active
+    if (auction.status !== "active") {
+      return res
+        .status(400)
+        .json({ success: false, message: "Auction is not active" });
+    }
+
+    // Check if auction has buyNowPrice
+    if (!auction.buyNowPrice) {
+      return res
+        .status(400)
+        .json({ success: false, message: "This auction does not have a Buy Now option" });
+    }
+
+    // Check if user is not the seller
+    if (auction.seller._id.toString() === req.user.id) {
+      return res
+        .status(400)
+        .json({ success: false, message: "You cannot buy your own auction" });
+    }
+
+    // Create a bid at the buyNowPrice
+    const bid = await Bid.create({
+      auction: auction.id,
+      bidder: req.user.id,
+      amount: auction.buyNowPrice,
+    });
+
+    // Update auction
+    auction.bids.push(bid._id);
+    auction.currentPrice = auction.buyNowPrice;
+    auction.status = "completed";
+    auction.winningBidder = req.user.id;
+    await auction.save();
+
+    // Get buyer information
+    const buyer = await User.findById(req.user.id, "username");
+
+    // Create notification for auction seller
+    await createNotification(
+      req,
+      auction.seller._id,
+      `${buyer.username} has purchased your auction "${auction.title}" using Buy Now for $${auction.buyNowPrice}`,
+      "SYSTEM",
+      req.user.id,
+      { model: "Auction", id: auction._id }
+    );
+
+    // Notify the buyer
+    await createNotification(
+      req,
+      req.user.id,
+      `Congratulations! You have successfully purchased "${auction.title}" for $${auction.buyNowPrice}`,
+      "SYSTEM",
+      null,
+      { model: "Auction", id: auction._id }
+    );
+
+    // Find and notify other bidders they've lost the auction
+    const otherBidders = await Bid.find({
+      auction: auction._id,
+      bidder: { $ne: req.user.id },
+    }).distinct("bidder");
+
+    for (const bidderId of otherBidders) {
+      await createNotification(
+        req,
+        bidderId,
+        `The auction "${auction.title}" was purchased by another user using the Buy Now option`,
+        "SYSTEM",
+        null,
+        { model: "Auction", id: auction._id }
+      );
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      message: "Auction purchased successfully using Buy Now",
+      data: { 
+        auction,
+        bid 
+      }
+    });
+  } catch (error) {
+    console.error("Error in Buy Now process:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // Get a single auction
 const getAuction = asyncHandler(async (req, res) => {
   const auction = await Auction.findById(req.params.id).populate("bids");
@@ -585,6 +685,7 @@ const deleteAuction = asyncHandler(async (req, res) => {
 module.exports = {
   createAuction,
   placeBid,
+  buyNowAuction,
   getAuction,
   getAllAuctions,
   endAuction,
