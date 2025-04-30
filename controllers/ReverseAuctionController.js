@@ -6,6 +6,9 @@ const mongoose = require("mongoose");
 const User = require("../models/User");
 const Notification = require("../models/Notification");
 
+const Order = require("../models/Order");
+const Transaction = require("../models/Transactions");
+
 // @desc    Create a new reverse auction
 // @route   POST /api/reverseauctions
 // @access  Private (Buyers only)
@@ -306,81 +309,467 @@ exports.placeBid = asyncHandler(async (req, res, next) => {
       },
     });
   });
-// @desc    Accept a bid on a reverse auction
+// @desc    Accept a bid on a reverse auction and process to checkout
 // @route   POST /api/reverseauctions/:id/accept-bid/:bidId
 // @access  Private (Owner only)
 exports.acceptBid = asyncHandler(async (req, res, next) => {
   const { id, bidId } = req.params;
   const buyerId = req.user._id;
 
+  // Use a transaction to ensure data integrity
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    // Find the reverse auction
+    const reverseAuction = await ReverseAuction.findById(id).session(session);
+
+    if (!reverseAuction) {
+      await session.abortTransaction();
+      return next(new ApiError(`No reverse auction found with ID: ${id}`, 404));
+    }
+
+    // Check if the user is the owner
+    if (reverseAuction.buyerId.toString() !== buyerId.toString()) {
+      await session.abortTransaction();
+      return next(
+        new ApiError("You are not authorized to accept bids on this reverse auction", 403)
+      );
+    }
+
+    // Check if auction is active
+    if (reverseAuction.status !== "active") {
+      await session.abortTransaction();
+      return next(new ApiError("This reverse auction is not active", 400));
+    }
+
+    // Find the bid
+    const bid = reverseAuction.bids.id(bidId);
+
+    if (!bid) {
+      await session.abortTransaction();
+      return next(new ApiError(`No bid found with ID: ${bidId}`, 404));
+    }
+
+    // Update the bid status to accepted
+    bid.status = "accepted";
+
+    // Update the auction status to pending_payment
+    reverseAuction.status = "pending_payment";
+    reverseAuction.winningBid = {
+      sellerId: bid.sellerId,
+      price: bid.price,
+      acceptedAt: Date.now(),
+    };
+
+    await reverseAuction.save({ session });
+
+    // Create transaction for tracking
+    const transaction = await Transaction.create(
+      [{
+        buyer: buyerId,
+        seller: bid.sellerId,
+        amount: bid.price,
+        transactionType: "reverse_auction",
+        items: [
+          {
+            reverseAuctionId: reverseAuction._id,
+            price: bid.price,
+          },
+        ],
+        paymentMethod: "pending", // Will be updated during checkout
+        status: "pending",
+        relatedReverseAuction: reverseAuction._id,
+      }],
+      { session }
+    );
+
+    // Create checkout session object
+    const checkoutSession = {
+      transactionId: transaction[0]._id,
+      reverseAuctionId: reverseAuction._id,
+      bidId: bidId,
+      sellerId: bid.sellerId,
+      buyerId: buyerId,
+      price: bid.price,
+      title: reverseAuction.title,
+      checkoutId: require('crypto').randomUUID()
+    };
+
+    // Send notification to the seller
+    await Notification.create(
+      [{
+        recipient: bid.sellerId,
+        type: "info",
+        title: "Your Bid was Accepted",
+        message: `Your bid of $${bid.price} on reverse auction "${reverseAuction.title}" was accepted! Awaiting buyer payment.`,
+        data: {
+          reverseAuctionId: reverseAuction._id,
+          transactionId: transaction[0]._id,
+          notificationType: "bid_accepted"
+        },
+      }],
+      { session }
+    );
+
+    // Send real-time notification via socket.io if available
+    const io = req.app.get("io");
+    const connectedUsers = req.app.get("connectedUsers");
+    
+    if (io && connectedUsers[bid.sellerId]) {
+      io.to(connectedUsers[bid.sellerId]).emit("new_notification", {
+        type: "bid_accepted",
+        title: "Bid Accepted",
+        message: `Your bid on "${reverseAuction.title}" was accepted! Awaiting buyer payment.`,
+        reverseAuctionId: reverseAuction._id,
+      });
+    }
+
+    await session.commitTransaction();
+
+    res.status(200).json({
+      status: "success",
+      message: "Bid accepted successfully. Proceed to payment.",
+      data: {
+        checkoutSession,
+      },
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    next(new ApiError(`Error accepting bid: ${error.message}`, 500));
+  } finally {
+    session.endSession();
+  }
+});
+
+// @desc    Process payment for reverse auction accepted bid
+// @route   POST /api/reverseauctions/payment
+// @access  Private (Buyer only)
+exports.processPayment = asyncHandler(async (req, res, next) => {
+  const { 
+    transactionId, 
+    paymentMethod, 
+    billingDetails,
+    shippingAddress 
+  } = req.body;
+  
+  const userId = req.user._id;
+
+  // Find transaction
+  const transaction = await Transaction.findById(transactionId);
+  
+  if (!transaction) {
+    return next(new ApiError("Transaction not found", 404));
+  }
+  
+  // Verify the transaction belongs to this user
+  if (transaction.buyer.toString() !== userId.toString()) {
+    return next(new ApiError("Unauthorized access to this transaction", 403));
+  }
+  
+  // Find related reverse auction
+  const reverseAuction = await ReverseAuction.findById(transaction.relatedReverseAuction);
+  
+  if (!reverseAuction) {
+    return next(new ApiError("Related reverse auction not found", 404));
+  }
+
+  // Handle different payment methods
+  if (paymentMethod === "cod") {
+    // Process Cash on Delivery
+    return processCodPayment(req, res, next, transaction, reverseAuction, shippingAddress);
+  } else {
+    // Process online payment
+    return processOnlinePayment(req, res, next, transaction, reverseAuction, paymentMethod, billingDetails);
+  }
+});
+
+// Helper function to process COD payment
+const processCodPayment = asyncHandler(async (req, res, next, transaction, reverseAuction, shippingAddress) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    // Update transaction
+    transaction.paymentMethod = "cod";
+    await transaction.save({ session });
+
+    // Create order for the accepted bid
+    const order = await Order.create(
+      [{
+        user: transaction.buyer,
+        seller: transaction.seller,
+        items: [{
+          product: reverseAuction._id,
+          quantity: 1,
+          price: transaction.amount,
+          type: "reverse_auction"
+        }],
+        totalAmount: transaction.amount,
+        shippingAddress,
+        paymentMethod: "cod",
+        paymentStatus: "pending",
+        transaction: transaction._id,
+        orderType: "reverse_auction"
+      }],
+      { session }
+    );
+
+    // Update transaction with order reference
+    transaction.relatedOrder = order[0]._id;
+    await transaction.save({ session });
+
+    // Update reverse auction status
+    reverseAuction.status = "completed";
+    reverseAuction.paymentStatus = "pending_cod";
+    reverseAuction.orderCreatedAt = Date.now();
+    reverseAuction.orderId = order[0]._id;
+    await reverseAuction.save({ session });
+
+    // Send notifications
+    await sendOrderNotifications(transaction, reverseAuction, "COD", session);
+
+    await session.commitTransaction();
+
+    res.status(201).json({
+      status: "success",
+      message: "Cash on Delivery order created successfully",
+      data: {
+        orderId: order[0]._id,
+        transactionId: transaction._id,
+        paymentMethod: "cod",
+      },
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    next(new ApiError(`Error processing COD payment: ${error.message}`, 500));
+  } finally {
+    session.endSession();
+  }
+});
+
+// Helper function to process online payment
+const processOnlinePayment = asyncHandler(async (req, res, next, transaction, reverseAuction, paymentMethod, billingDetails) => {
+  // Validate billing details
+  if (
+    !billingDetails ||
+    !billingDetails.email ||
+    !billingDetails.firstName ||
+    !billingDetails.lastName ||
+    !billingDetails.phoneNumber
+  ) {
+    return next(new ApiError("Missing required billing details", 400));
+  }
+
+  try {
+    // Update transaction
+    transaction.paymentMethod = paymentMethod;
+    await transaction.save();
+
+    // Prepare for payment gateway integration
+    const { PAYMOB_API_KEY, PAYMOB_INTEGRATION_ID, PAYMOB_IFRAME_ID } = process.env;
+
+    // Validate PayMob environment variables
+    if (!PAYMOB_API_KEY || !PAYMOB_INTEGRATION_ID || !PAYMOB_IFRAME_ID) {
+      return next(new ApiError("Payment gateway configuration is incomplete", 500));
+    }
+
+    // Get authentication token
+    const authResponse = await axios.post(
+      "https://accept.paymob.com/api/auth/tokens",
+      { api_key: PAYMOB_API_KEY },
+      {
+        headers: { "Content-Type": "application/json" },
+        timeout: 10000,
+      }
+    );
+
+    if (!authResponse.data || !authResponse.data.token) {
+      return next(new ApiError("Failed to authenticate with payment gateway", 500));
+    }
+
+    const authToken = authResponse.data.token;
+
+    // Create order on PayMob
+    const orderResponse = await axios.post("https://accept.paymob.com/api/ecommerce/orders", {
+      auth_token: authToken,
+      delivery_needed: false,
+      amount_cents: Math.round(transaction.amount * 100),
+      currency: "EGP",
+      merchant_order_id: `RA-${transaction._id}`,
+      items: [
+        {
+          name: reverseAuction.title || "Reverse Auction",
+          amount_cents: Math.round(transaction.amount * 100),
+          description: reverseAuction.description?.substring(0, 100) || "Reverse Auction Payment",
+          quantity: 1,
+        },
+      ],
+    });
+
+    if (!orderResponse.data || !orderResponse.data.id) {
+      return next(new ApiError("Failed to create order on payment gateway", 500));
+    }
+
+    const orderId = orderResponse.data.id;
+
+    // Update transaction with gateway order ID
+    transaction.gatewayOrderId = orderId;
+    await transaction.save();
+
+    // Get payment key
+    const paymentKeyResponse = await axios.post("https://accept.paymob.com/api/acceptance/payment_keys", {
+      auth_token: authToken,
+      amount_cents: Math.round(transaction.amount * 100),
+      expiration: 3600,
+      order_id: orderId,
+      billing_data: {
+        apartment: billingDetails.apartment || "NA",
+        email: billingDetails.email,
+        floor: billingDetails.floor || "NA",
+        first_name: billingDetails.firstName,
+        street: billingDetails.street || "NA",
+        building: billingDetails.building || "NA",
+        phone_number: billingDetails.phoneNumber,
+        shipping_method: "NA",
+        postal_code: billingDetails.postalCode || "NA",
+        city: billingDetails.city || "NA",
+        country: billingDetails.country || "NA",
+        last_name: billingDetails.lastName,
+        state: billingDetails.state || "NA",
+      },
+      currency: "EGP",
+      integration_id: PAYMOB_INTEGRATION_ID,
+    });
+
+    if (!paymentKeyResponse.data || !paymentKeyResponse.data.token) {
+      return next(new ApiError("Failed to generate payment key", 500));
+    }
+
+    const paymentKey = paymentKeyResponse.data.token;
+    
+    // Update transaction with payment key
+    transaction.gatewayReference = paymentKey;
+    await transaction.save();
+
+    // Return payment information
+    res.status(200).json({
+      status: "success",
+      data: {
+        transactionId: transaction._id,
+        paymentKey,
+        iframeUrl: `https://accept.paymob.com/api/acceptance/iframes/${PAYMOB_IFRAME_ID}?payment_token=${paymentKey}`,
+      },
+    });
+  } catch (error) {
+    next(new ApiError(`Error processing online payment: ${error.message}`, 500));
+  }
+});
+
+// Helper function to send notifications
+const sendOrderNotifications = async (transaction, reverseAuction, paymentMethod, session) => {
+  // Notify buyer
+  await Notification.create(
+    [{
+      recipient: transaction.buyer,
+      type: "info",
+      title: "Order Created",
+      message: `Your order for "${reverseAuction.title}" has been created with ${paymentMethod} payment method.`,
+      data: {
+        reverseAuctionId: reverseAuction._id,
+        transactionId: transaction._id,
+        notificationType: "order_created"
+      },
+    }],
+    { session }
+  );
+
+  // Notify seller
+  await Notification.create(
+    [{
+      recipient: transaction.seller,
+      type: "info",
+      title: "New Order Received",
+      message: `You have received a new order for "${reverseAuction.title}" with ${paymentMethod} payment method.`,
+      data: {
+        reverseAuctionId: reverseAuction._id,
+        transactionId: transaction._id,
+        notificationType: "new_order"
+      },
+    }],
+    { session }
+  );
+};
+
+// @desc    Proceed to checkout for an accepted reverse auction bid
+// @route   GET /api/reverseauctions/:id/checkout/:bidId
+// @access  Private (Owner only)
+exports.prepareCheckout = asyncHandler(async (req, res, next) => {
+  const { id, bidId } = req.params;
+  const buyerId = req.user._id;
+
   // Find the reverse auction
-  const reverseAuction = await ReverseAuction.findById(id);
+  const reverseAuction = await ReverseAuction.findById(id)
+    .populate("buyerId", "name email")
+    .populate("category", "name")
+    .populate({
+      path: "bids.sellerId",
+      select: "name email profilePicture",
+    });
 
   if (!reverseAuction) {
     return next(new ApiError(`No reverse auction found with ID: ${id}`, 404));
   }
 
   // Check if the user is the owner
-  if (reverseAuction.buyerId.toString() !== buyerId.toString()) {
+  if (reverseAuction.buyerId._id.toString() !== buyerId.toString()) {
     return next(
-      new ApiError("You are not authorized to accept bids on this reverse auction", 403)
+      new ApiError("You are not authorized to checkout this reverse auction", 403)
     );
   }
 
-  // Check if auction is active
-  if (reverseAuction.status !== "active") {
-    return next(new ApiError("This reverse auction is not active", 400));
+  // Check if auction status is correct
+  if (reverseAuction.status !== "pending_payment") {
+    return next(new ApiError("This reverse auction is not ready for checkout", 400));
   }
 
-  // Find the bid
+  // Find the accepted bid
   const bid = reverseAuction.bids.id(bidId);
 
-  if (!bid) {
-    return next(new ApiError(`No bid found with ID: ${bidId}`, 404));
+  if (!bid || bid.status !== "accepted") {
+    return next(new ApiError(`No accepted bid found with ID: ${bidId}`, 404));
   }
 
-  // Update the bid status to accepted
-  bid.status = "accepted";
-
-  // Update the auction status to completed and set winning bid
-  reverseAuction.status = "completed";
-  reverseAuction.winningBid = {
-    sellerId: bid.sellerId,
-    price: bid.price,
-    acceptedAt: Date.now(),
-  };
-
-  await reverseAuction.save();
-
-  // Send notification to the seller
-  await Notification.create({
-    recipient: bid.sellerId,
-    type: "info", // Use a valid enum value
-    title: "Your Bid was Accepted",
-    message: `Your bid of $${bid.price} on reverse auction "${reverseAuction.title}" was accepted!`, // Changed from content to message
-    data: {
-      reverseAuctionId: reverseAuction._id,
-    },
+  // Find related transaction
+  const transaction = await Transaction.findOne({
+    relatedReverseAuction: reverseAuction._id,
+    status: "pending"
   });
-  // Send real-time notification via socket.io if available
-  const io = req.app.get("io");
-  const connectedUsers = req.app.get("connectedUsers");
-  
-  if (io && connectedUsers[bid.sellerId]) {
-    io.to(connectedUsers[bid.sellerId]).emit("new_notification", {
-      type: "bid_accepted",
-      title: "Bid Accepted",
-      message: `Your bid on "${reverseAuction.title}" was accepted!`,
-      reverseAuctionId: reverseAuction._id,
-    });
+
+  if (!transaction) {
+    return next(new ApiError("Transaction for this auction not found", 404));
   }
+
+  // Generate checkout data
+  const checkoutData = {
+    transactionId: transaction._id,
+    checkoutId: require('crypto').randomUUID(),
+    reverseAuctionId: reverseAuction._id,
+    bidId: bidId,
+    sellerId: bid.sellerId,
+    sellerName: bid.sellerId.name,
+    buyerId: buyerId,
+    buyerName: reverseAuction.buyerId.name,
+    price: bid.price,
+    title: reverseAuction.title,
+    category: reverseAuction.category ? reverseAuction.category.name : "Not specified",
+    description: reverseAuction.description,
+    acceptedAt: reverseAuction.winningBid.acceptedAt,
+  };
 
   res.status(200).json({
     status: "success",
-    message: "Bid accepted successfully",
-    data: {
-      reverseAuction,
-    },
+    data: checkoutData,
   });
 });
 
@@ -401,6 +790,218 @@ exports.getMyReverseAuctions = asyncHandler(async (req, res) => {
     data: reverseAuctions,
   });
 });
+// @desc    Handle payment callback for reverse auction payments
+// @route   GET /api/reverseauctions/payment/callback
+// @access  Public
+exports.paymentCallback = asyncHandler(async (req, res, next) => {
+  try {
+    const orderId = req.query.order || req.query['?order'] || '';
+    const transactionId = req.query.transaction_id;
+    const success = req.query.success;
+    const hmac = req.query.hmac;
+    
+    if (!orderId) {
+      return res.status(400).json({
+        status: "error",
+        message: "Missing order parameter in callback"
+      });
+    }
+
+    // Validate HMAC if provided
+    if (hmac && !validateHmac(hmac, req.query)) {
+      return res.status(400).json({
+        status: "error",
+        message: "Invalid HMAC signature",
+        orderId: orderId
+      });
+    }
+
+    const isSuccess = success && (success.toLowerCase() === "true");
+    return isSuccess 
+      ? await handleSuccessfulReverseAuctionPayment(orderId, transactionId, res)
+      : await handleFailedReverseAuctionPayment(orderId, transactionId, res);
+
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+      message: "Server error processing payment callback",
+      error: error.message
+    });
+  }
+});
+
+// Helper function for successful payments
+async function handleSuccessfulReverseAuctionPayment(orderId, transactionId, res) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  
+  try {
+    // Find transaction
+    const transaction = await Transaction.findOne({ gatewayOrderId: orderId }).session(session);
+    if (!transaction) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        status: "error",
+        message: "Transaction not found for this order ID",
+        orderId: orderId
+      });
+    }
+
+    // Update transaction status
+    transaction.status = "completed";
+    transaction.gatewayTransactionId = transactionId;
+    transaction.completedAt = new Date();
+    await transaction.save({ session });
+
+    // Find reverse auction
+    const reverseAuction = await ReverseAuction.findById(transaction.relatedReverseAuction).session(session);
+    if (!reverseAuction) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        status: "error",
+        message: "Reverse auction not found",
+        orderId: orderId
+      });
+    }
+
+    // Create order
+    const orderData = {
+      user: transaction.buyer,
+      seller: transaction.seller,
+      items: [{
+        product: reverseAuction._id,
+        quantity: 1,
+        price: transaction.amount,
+        type: "reverse_auction"
+      }],
+      totalAmount: transaction.amount,
+      paymentMethod: transaction.paymentMethod,
+      paymentStatus: "paid",
+      transaction: transaction._id,
+      orderType: "reverse_auction"
+    };
+
+    const createdOrder = await Order.create([orderData], { session });
+    const savedOrder = createdOrder[0];
+
+    // Update transaction with order reference
+    transaction.relatedOrder = savedOrder._id;
+    await transaction.save({ session });
+
+    // Update reverse auction status
+    reverseAuction.status = "completed";
+    reverseAuction.paymentStatus = "paid";
+    reverseAuction.orderCreatedAt = Date.now();
+    reverseAuction.orderId = savedOrder._id;
+    await reverseAuction.save({ session });
+
+    // Send notifications
+    await sendOrderNotifications(transaction, reverseAuction, "online payment", session);
+
+    await session.commitTransaction();
+
+    return res.status(200).json({
+      status: "success",
+      message: "Payment processed successfully",
+      data: {
+        transactionId: transaction._id.toString(),
+        orderId: savedOrder._id.toString(),
+        reverseAuctionId: reverseAuction._id.toString(),
+        paymentStatus: "completed",
+        amount: transaction.amount
+      }
+    });
+
+  } catch (error) {
+    await session.abortTransaction();
+    return res.status(500).json({
+      status: "error",
+      message: "Error processing successful payment",
+      error: error.message,
+      orderId: orderId
+    });
+  } finally {
+    session.endSession();
+  }
+}
+
+// Helper function for failed payments
+async function handleFailedReverseAuctionPayment(orderId, transactionId, res) {
+  try {
+    const transaction = await Transaction.findOneAndUpdate(
+      { gatewayOrderId: orderId },
+      { 
+        status: "failed", 
+        gatewayTransactionId: transactionId,
+        failedAt: new Date() 
+      },
+      { new: true }
+    );
+
+    // Find related reverse auction
+    if (transaction && transaction.relatedReverseAuction) {
+      await ReverseAuction.findByIdAndUpdate(
+        transaction.relatedReverseAuction,
+        { paymentStatus: "failed" }
+      );
+    }
+
+    return res.status(200).json({
+      status: "failed",
+      message: "Payment failed",
+      data: {
+        transactionId: transaction ? transaction._id.toString() : null,
+        gatewayOrderId: orderId,
+        gatewayTransactionId: transactionId || "unknown",
+        timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+      message: "Error updating failed transaction",
+      error: error.message,
+      orderId: orderId
+    });
+  }
+}
+
+// HMAC validation function
+function validateHmac(receivedHmac, params) {
+  try {
+    const PAYMOB_HMAC_SECRET = process.env.PAYMOB_HMAC_SECRET;
+    
+    if (!PAYMOB_HMAC_SECRET) {
+      console.warn("HMAC validation skipped: Missing HMAC secret");
+      return true; // Skip validation if secret is not configured
+    }
+    
+    // Create a copy of params without the hmac
+    const paramsToValidate = { ...params };
+    delete paramsToValidate.hmac;
+    
+    // Sort keys alphabetically
+    const sortedKeys = Object.keys(paramsToValidate).sort();
+    
+    // Create string of key=value pairs
+    const concatenatedString = sortedKeys
+      .map(key => `${key}=${paramsToValidate[key]}`)
+      .join('&');
+    
+    // Generate HMAC
+    const crypto = require('crypto');
+    const calculatedHmac = crypto
+      .createHmac('sha512', PAYMOB_HMAC_SECRET)
+      .update(concatenatedString)
+      .digest('hex');
+    
+    return calculatedHmac === receivedHmac;
+  } catch (error) {
+    console.error("HMAC validation error:", error);
+    return false;
+  }
+}
 
 // @desc    Get all reverse auctions where the current user has placed bids (as seller)
 // @route   GET /api/reverseauctions/my-bids

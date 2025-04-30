@@ -395,15 +395,14 @@ function validateHmac(receivedHmac, params) {
 // Process payment callback - JSON RESPONSE ONLY VERSION
 exports.paymentCallback = asyncHandler(async (req, res, next) => {
   try {
-    // Enhanced logging for debugging
     console.log("Payment callback received");
     console.log("Full URL:", req.originalUrl);
     console.log("Query params:", req.query);
     
-    // Extract all possible ways the parameters might be present
-    const orderId = req.query.order || 
-                   (req.params && req.params.order) ||
-                   (req.query['?order'] || ''); // Sometimes Express adds '?' prefix
+    // Fix: Use let instead of const since we might reassign
+    let orderId = req.query.order || 
+                 (req.params && req.params.order) ||
+                 (req.query['?order'] || '');
     
     const transactionId = req.query.transaction_id || 
                          (req.params && req.params.transaction_id);
@@ -416,9 +415,7 @@ exports.paymentCallback = asyncHandler(async (req, res, next) => {
     
     console.log("Extracted params:", { orderId, transactionId, success, hmac });
     
-    // Handle encoded URL parameters
     if (!orderId && req.originalUrl) {
-      // Try to manually extract from URL if Express parsing failed
       const urlParams = new URLSearchParams(req.originalUrl.split('?')[1]);
       const manualOrderId = urlParams.get('order');
       if (manualOrderId) {
@@ -427,7 +424,6 @@ exports.paymentCallback = asyncHandler(async (req, res, next) => {
       }
     }
     
-    // Validate required parameters
     if (!orderId) {
       console.error("Missing order parameter in callback");
       return res.status(400).json({
@@ -436,7 +432,6 @@ exports.paymentCallback = asyncHandler(async (req, res, next) => {
       });
     }
 
-    // Verify HMAC if payment gateway requires it
     if (hmac && !validateHmac(hmac, req.query)) {
       console.error("Invalid HMAC signature");
       return res.status(400).json({
@@ -446,13 +441,11 @@ exports.paymentCallback = asyncHandler(async (req, res, next) => {
       });
     }
 
-    // Process payment result based on success parameter
-    // Handle case insensitivity for "true" value
-    if (success && (success.toLowerCase() === "true")) {
-      return await handleSuccessfulPaymentJson(orderId, transactionId, res);
-    } else {
-      return await handleFailedPaymentJson(orderId, transactionId, res);
-    }
+    const isSuccess = success && (success.toLowerCase() === "true");
+    return isSuccess 
+      ? await handleSuccessfulPaymentJson(orderId, transactionId, res)
+      : await handleFailedPaymentJson(orderId, transactionId, res);
+
   } catch (error) {
     console.error("Payment callback error:", error);
     return res.status(500).json({
@@ -463,69 +456,101 @@ exports.paymentCallback = asyncHandler(async (req, res, next) => {
   }
 });
 
-// Helper function for successful payments - JSON RESPONSE ONLY
+// Improved successful payment handler
 async function handleSuccessfulPaymentJson(orderId, transactionId, res) {
   try {
     console.log("Processing successful payment for order:", orderId);
     
-    // 1. Find and validate transaction
-    const transaction = await Transaction.findOne({ gatewayOrderId: orderId });
-    if (!transaction) {
-      console.error("Transaction not found for order:", orderId);
-      return res.status(404).json({
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    
+    try {
+      // 1. Find and validate transaction
+      const transaction = await Transaction.findOne({ gatewayOrderId: orderId }).session(session);
+      if (!transaction) {
+        await session.abortTransaction();
+        console.error("Transaction not found for order:", orderId);
+        return res.status(404).json({
+          status: "error",
+          message: "Transaction not found for this order ID",
+          orderId: orderId
+        });
+      }
+
+      // 2. Update transaction status
+      transaction.status = "completed";
+      transaction.gatewayTransactionId = transactionId;
+      transaction.completedAt = new Date();
+      await transaction.save({ session });
+
+      // 3. Create order record
+      const orderData = {
+        user: transaction.buyer,
+        items: transaction.items.map(item => ({
+          product: item.item,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        totalAmount: transaction.amount,
+        paymentMethod: transaction.paymentMethod,
+        paymentStatus: "paid",
+        transaction: transaction._id,
+      };
+
+      const createdOrder = await Order.create([orderData], { session });
+      const savedOrder = createdOrder[0];
+
+      // 4. Update transaction with order reference
+      transaction.relatedOrder = savedOrder._id;
+      await transaction.save({ session });
+
+      // 5. Clear user's cart
+      await Cart.findOneAndUpdate(
+        { user: transaction.buyer },
+        { $set: { items: [], totalPrice: 0 } },
+        { session }
+      );
+
+      await session.commitTransaction();
+      console.log("Transaction completed and order created:", savedOrder._id);
+
+      return res.status(200).json({
+        status: "success",
+        message: "Payment processed successfully",
+        data: {
+          transactionId: transaction._id.toString(),
+          orderId: savedOrder._id.toString(),
+          paymentStatus: "completed",
+          amount: transaction.amount,
+          paymentMethod: transaction.paymentMethod,
+          gatewayTransactionId: transactionId,
+          timestamp: transaction.completedAt
+        }
+      });
+
+    } catch (dbError) {
+      await session.abortTransaction();
+      console.error("Database error in successful payment:", dbError);
+      return res.status(500).json({
         status: "error",
-        message: "Transaction not found for this order ID",
+        message: "Error processing successful payment",
+        error: dbError.message,
         orderId: orderId
       });
+    } finally {
+      session.endSession();
     }
 
-    // 2. Update transaction status
-    transaction.status = "completed";
-    transaction.gatewayTransactionId = transactionId;
-    transaction.completedAt = new Date();
-    await transaction.save();
-
-    // 3. Create order record
-    const createdOrder = await Order.create({
-      user: transaction.buyer,
-      items: transaction.items,
-      totalAmount: transaction.amount,
-      paymentMethod: transaction.paymentMethod,
-      paymentStatus: "paid",
-      transaction: transaction._id,
-    });
-
-    // 4. Clear user's cart (fire-and-forget)
-    clearUserCart(transaction.buyer).catch(err => 
-      console.error("Error clearing cart:", err)
-    );
-
-    // 5. Return success JSON response
-    return res.status(200).json({
-      status: "success",
-      message: "Payment processed successfully",
-      data: {
-        transactionId: transaction._id.toString(),
-        orderId: createdOrder._id.toString(),
-        paymentStatus: "completed",
-        amount: transaction.amount,
-        paymentMethod: transaction.paymentMethod,
-        gatewayTransactionId: transactionId,
-        timestamp: transaction.completedAt
-      }
-    });
-
-  } catch (dbError) {
-    console.error("Database error in successful payment:", dbError);
+  } catch (error) {
+    console.error("Unexpected error in payment processing:", error);
     return res.status(500).json({
       status: "error",
-      message: "Error processing successful payment",
-      error: dbError.message,
+      message: "Unexpected error processing payment",
+      error: error.message,
       orderId: orderId
     });
   }
 }
-
 // Helper function for failed payments - JSON RESPONSE ONLY
 async function handleFailedPaymentJson(orderId, transactionId, res) {
   try {

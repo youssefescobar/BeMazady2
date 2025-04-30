@@ -1,9 +1,7 @@
 const express = require("express");
 const router = express.Router();
-const protect = require("../middlewares/AuthMiddle"); // Import protect middleware
-const authorize = require("../middlewares/AuthorizeMiddle"); // Import authorize middleware
-const uploadMiddleware = require("../middlewares/UploadMiddle"); // For image uploads
 
+// Import controllers
 const {
   createReverseAuction,
   getAllReverseAuctions,
@@ -15,55 +13,37 @@ const {
   getMyReverseAuctions,
   getMyBids,
   cancelReverseAuction,
-} = require("../controllers/ReverseAuctionController");
+  prepareCheckout,
+  processPayment,
+  paymentCallback
+} = require("../controllers/reverseAuctionController");
 
-// You might want to add validators later
-// const { ReverseAuctionValidator } = require("../utils/Validators/ReverseAuctionValid");
+// Import middlewares - assuming direct function exports
+const AuthMiddle = require("../middlewares/AuthMiddle.js");
+const restrictTo = require("../middlewares/AuthorizeMiddle.js");
+const UploadMiddle = require("../middlewares/UploadMiddle.js");
 
-// 🟢 Public: Anyone can view reverse auctions
+// Public routes
 router.get("/", getAllReverseAuctions);
 router.get("/:id", getReverseAuction);
+router.get("/payment/callback", paymentCallback);
 
-// 🟢 Protected: Only logged-in users can view their auctions and bids
-router.get("/my/auctions", protect, getMyReverseAuctions);
-router.get("/my/bids", protect, getMyBids);
+// Assuming AuthMiddle is the protect function itself or contains protect function
+const protect = typeof AuthMiddle === 'function' ? AuthMiddle : AuthMiddle.protect;
 
-// 🟢 Protected: Only logged-in buyers can create reverse auctions (With Image Upload)
-router.post(
-  "/",
-  protect,
-  authorize("buyer", "admin"),
-  uploadMiddleware,
-  // ReverseAuctionValidator, // You might add this later
-  createReverseAuction
-);
+// Protected routes - apply protect middleware directly
+// Buyer routes
+router.post("/", protect, restrictTo("buyer"), createReverseAuction);
+router.put("/:id", protect, restrictTo("buyer"), updateReverseAuction);
+router.delete("/:id", protect, restrictTo("buyer"), deleteReverseAuction);
+router.post("/:id/accept-bid/:bidId", protect, restrictTo("buyer"), acceptBid);
+router.get("/:id/checkout/:bidId", protect, restrictTo("buyer"), prepareCheckout);
+router.post("/payment", protect, restrictTo("buyer"), processPayment);
+router.patch("/:id/cancel", protect, restrictTo("buyer"), cancelReverseAuction);
+router.get("/my-auctions", protect, restrictTo("buyer"), getMyReverseAuctions);
 
-// 🟢 Protected: Only auction owners can update their reverse auctions
-router.put(
-  "/:id",
-  protect,
-  // authorize("buyer", "admin"), // Uncomment if needed
-  uploadMiddleware,
-  // UpdateReverseAuctionValidator, // You might add this later
-  updateReverseAuction
-);
-
-// 🟢 Protected: Only auction owners can delete their reverse auctions
-router.delete("/:id", protect, deleteReverseAuction);
-
-// 🟢 Protected: Only sellers can place bids on reverse auctions
-router.post(
-  "/:id/bid",
-  protect,
-  authorize("seller", "admin"),
-  // PlaceBidValidator, // You might add this later
-  placeBid
-);
-
-// 🟢 Protected: Only auction owners can accept bids
-router.post("/:id/accept-bid/:bidId", protect, acceptBid);
-
-// 🟢 Protected: Only auction owners can cancel their reverse auctions
-router.patch("/:id/cancel", protect, cancelReverseAuction);
+// Seller routes
+router.post("/:id/bid", protect, restrictTo("seller"), placeBid);
+router.get("/my-bids", protect, restrictTo("seller"), getMyBids);
 
 module.exports = router;

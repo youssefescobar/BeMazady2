@@ -1,122 +1,134 @@
 const mongoose = require("mongoose");
+const Schema = mongoose.Schema;
 
-const reverseAuctionSchema = new mongoose.Schema(
+const bidSchema = new Schema({
+  sellerId: {
+    type: Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+  },
+  price: {
+    type: Number,
+    required: true,
+  },
+  status: {
+    type: String,
+    enum: ["pending", "accepted", "rejected"],
+    default: "pending",
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
+const winningBidSchema = new Schema({
+  sellerId: {
+    type: Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+  },
+  price: {
+    type: Number,
+    required: true,
+  },
+  acceptedAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
+const reverseAuctionSchema = new Schema(
   {
     title: {
       type: String,
-      required: [true, "Reverse auction title is required"],
+      required: [true, "A reverse auction must have a title"],
       trim: true,
-      minlength: [3, "Too short auction title"],
-      maxlength: [100, "Too long auction title"],
+      maxlength: [100, "Title cannot be more than 100 characters"],
     },
     description: {
       type: String,
-      required: [true, "Reverse auction description is required"],
-      minlength: [20, "Too short auction description"],
+      required: [true, "A reverse auction must have a description"],
+      trim: true,
     },
     buyerId: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: Schema.Types.ObjectId,
       ref: "User",
-      required: [true, "Buyer ID is required"],
+      required: [true, "A reverse auction must belong to a buyer"],
     },
     category: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: Schema.Types.ObjectId,
       ref: "Category",
-      required: [true, "Category is required"],
+      required: [true, "A reverse auction must belong to a category"],
     },
     subcategory: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "SubCategory", // Change to match the model name
+      type: Schema.Types.ObjectId,
+      ref: "Subcategory",
     },
-    images: [String],
     startPrice: {
       type: Number,
-      required: [true, "Start price is required"],
-    },
-    status: {
-      type: String,
-      enum: ["pending", "active", "completed", "cancelled"],
-      default: "pending",
+      required: [true, "A reverse auction must have a starting price"],
     },
     startDate: {
       type: Date,
-      required: [true, "Start date is required"],
+      default: Date.now,
     },
     endDate: {
       type: Date,
-      required: [true, "End date is required"],
-    },
-    bids: [
-      {
-        sellerId: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "User",
-          required: true,
-        },
-        price: {
-          type: Number,
-          required: true,
-        },
-        createdAt: {
-          type: Date,
-          default: Date.now,
-        },
-        status: {
-          type: String,
-          enum: ["pending", "accepted", "rejected"],
-          default: "pending",
-        },
-      },
-    ],
-    winningBid: {
-      sellerId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-      },
-      price: {
-        type: Number,
-      },
-      acceptedAt: {
-        type: Date,
-      },
+      required: [true, "A reverse auction must have an end date"],
     },
     requirements: {
       type: String,
-      required: [true, "Requirements are necessary for reverse auction"],
+      required: [true, "A reverse auction must have requirements"],
     },
     deliveryTime: {
       type: String,
-      required: [true, "Expected delivery time is required"],
+      required: [true, "A reverse auction must have a delivery time"],
     },
     location: {
       type: String,
     },
+    status: {
+      type: String,
+      enum: ["active", "pending_payment", "completed", "cancelled"],
+      default: "active",
+    },
+    paymentStatus: {
+      type: String,
+      enum: ["none", "pending", "pending_cod", "paid", "failed"],
+      default: "none",
+    },
+    bids: [bidSchema],
+    winningBid: {
+      type: winningBidSchema,
+    },
+    orderId: {
+      type: Schema.Types.ObjectId,
+      ref: "Order",
+    },
+    orderCreatedAt: {
+      type: Date,
+    }
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  }
 );
 
-// Virtual fields for time remaining and bid count
-reverseAuctionSchema.virtual("timeRemaining").get(function () {
-  return Math.max(0, this.endDate - new Date());
+// Index for efficient queries
+reverseAuctionSchema.index({ buyerId: 1, createdAt: -1 });
+reverseAuctionSchema.index({ status: 1, endDate: 1 });
+reverseAuctionSchema.index({ "bids.sellerId": 1 });
+
+// Middleware to populate references
+reverseAuctionSchema.pre(/^find/, function (next) {
+  this.populate({
+    path: "bids.sellerId",
+    select: "name email profilePicture",
+  });
+  next();
 });
 
-reverseAuctionSchema.virtual("bidCount").get(function () {
-  return this.bids.length;
-});
-
-reverseAuctionSchema.virtual("lowestBid").get(function () {
-  if (this.bids.length === 0) return null;
-  
-  return this.bids.reduce((min, bid) => 
-    bid.price < min.price ? bid : min
-  , this.bids[0]);
-});
-
-// Set to return virtuals when converting to JSON
-reverseAuctionSchema.set("toJSON", { virtuals: true });
-reverseAuctionSchema.set("toObject", { virtuals: true });
-
-// Create a model
-const ReverseAuction = mongoose.model("ReverseAuction", reverseAuctionSchema);
-
-module.exports = ReverseAuction;
+module.exports = mongoose.model("ReverseAuction", reverseAuctionSchema);

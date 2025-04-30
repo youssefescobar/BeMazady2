@@ -3,21 +3,45 @@ const Transaction = require("../models/Transactions")
 const ApiError = require("../utils/ApiError")
 const asyncHandler = require("express-async-handler")
 
-// Get user orders
 exports.getUserOrders = asyncHandler(async (req, res) => {
-  const userId = req.userId
+  try {
+    const userId = req.userId;
+    console.log("Getting orders for user:", userId);
 
-  const orders = await Order.find({ user: userId })
-    .sort("-createdAt")
-    .populate("items.product", "name images price")
-    .populate("transaction")
+    const orders = await Order.find({ user: userId })
+      .sort("-createdAt")
+      .populate({
+        path: "items.product",
+        select: "name images price",
+      })
+      .populate({
+        path: "transaction",
+        select: "status gatewayTransactionId completedAt" // Only include necessary fields
+      });
 
-  res.status(200).json({
-    status: "success",
-    results: orders.length,
-    data: orders,
-  })
-})
+    console.log("Orders found:", orders.length);
+    if (orders.length > 0) {
+      console.log("Sample order:", {
+        _id: orders[0]._id,
+        status: orders[0].paymentStatus,
+        itemsCount: orders[0].items.length
+      });
+    }
+
+    res.status(200).json({
+      status: "success",
+      results: orders.length,
+      data: orders,
+    });
+  } catch (error) {
+    console.error("Error fetching user orders:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Failed to fetch orders",
+      error: error.message,
+    });
+  }
+});
 
 // Get specific order
 exports.getOrder = asyncHandler(async (req, res, next) => {
