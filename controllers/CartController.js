@@ -2,6 +2,8 @@ const asyncHandler = require("express-async-handler")
 const Cart = require("../models/Cart")
 const Item = require("../models/Item")
 const ApiError = require("../utils/ApiError")
+const Order = require("../models/Order")
+const stripe = require("../utils/stripe")
 
 // Get User Cart - Private
 const GetCart = asyncHandler(async (req, res, next) => {
@@ -66,43 +68,65 @@ const ClearCart = asyncHandler(async (req, res, next) => {
 })
 
 // Prepare Cart for Checkout - Private
-const PrepareCheckout = asyncHandler(async (req, res, next) => {
-  const cart = await Cart.findOne({ user: req.userId }).populate({
+const checkoutCart = asyncHandler(async (req, res, next) => {
+  const cart = await Cart.findOne({ user: req.user._id }).populate({
     path: "items.item",
-    select: "name price images description seller",
+    populate: { path: "owner", select: "_id" },
   });
+  
 
   if (!cart || cart.items.length === 0) {
-    return next(new ApiError("Cart is empty", 400));
+    return res.status(400).json({ success: false, message: "Cart is empty." });
   }
 
-  // Calculate final prices and prepare checkout data
-  const checkoutData = {
-    items: cart.items.map((item) => ({
-      id: item.item._id,
-      name: item.item.name,
-      price: item.item.price,
-      quantity: item.quantity,
-      subtotal: item.item.price * item.quantity,
-      seller: item.item.seller,
-    })),
-    totalPrice: cart.totalPrice,
-    itemCount: cart.items.length,
-    totalItems: cart.items.reduce((total, item) => total + item.quantity, 0),
-  };
+  let totalPrice = 0;
+  const orderItems = [];
 
-  // Generate a checkoutId if you want to track this checkout session
-  const checkoutId = require('crypto').randomUUID();
-  
-  // You could store this in the session or a temporary database collection
-  // await CheckoutSession.create({ _id: checkoutId, userId: req.userId, ...checkoutData });
-  
-  res.status(200).json({ 
-    status: "success", 
-    data: {
-      ...checkoutData,
-      checkoutId 
+  for (const cartItem of cart.items) {
+    const item = cartItem.item;
+    if (!item || item.item_status !== "available") {
+      return res.status(400).json({ success: false, message: `Item "${item?.title || 'Unknown'}" is not available.` });
     }
+
+    totalPrice += item.price * cartItem.quantity;
+
+    orderItems.push({
+      item: item._id,
+      quantity: cartItem.quantity,
+      priceAtPurchase: item.price,
+      seller: item.owner,
+    });
+
+    await Item.updateOne({ _id: item._id }, { item_status: "pending" });
+
+  }
+
+  const paymentIntent = await stripe.paymentIntents.create({
+    amount: totalPrice * 100,
+    currency: "usd",
+    metadata: {
+      userId: req.user._id.toString(),
+      orderType: "item-cart-checkout",
+    },
+  });
+
+  const order = await Order.create({
+    user: req.user._id,
+    orderItems,
+    totalPrice,
+    paymentMethod: "stripe",
+    paymentIntentId: paymentIntent.id,
+  });
+
+  // Clear cart
+  cart.items = [];
+  cart.totalPrice = 0;
+  await cart.save();
+
+  res.status(200).json({
+    success: true,
+    clientSecret: paymentIntent.client_secret,
+    order,
   });
 });
 
@@ -111,5 +135,5 @@ module.exports = {
   AddToCart,
   RemoveFromCart,
   ClearCart,
-  PrepareCheckout, // Make sure this is exported
+  checkoutCart, // Make sure this is exported
 }

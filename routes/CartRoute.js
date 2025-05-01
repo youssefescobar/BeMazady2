@@ -4,7 +4,7 @@ const {
   AddToCart,
   RemoveFromCart,
   ClearCart,
-  PrepareCheckout, // Make sure this matches the exported function name
+  checkoutCart, // Make sure this matches the exported function name
 } = require("../controllers/CartController")
 const protect = require("../middlewares/AuthMiddle")
 
@@ -14,6 +14,6 @@ router.get("/", protect, GetCart)
 router.post("/add", protect, AddToCart)
 router.delete("/remove", protect, RemoveFromCart)
 router.delete("/clear", protect, ClearCart)
-router.get("/checkout", protect, PrepareCheckout) // This should now work
+router.get("/checkout", protect, checkoutCart) // This should now work
 
 module.exports = router

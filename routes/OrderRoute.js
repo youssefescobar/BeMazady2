@@ -1,19 +1,24 @@
-const express = require("express")
-const router = express.Router()
-const orderController = require("../controllers/OrderController")
-const protect = require("../middlewares/AuthMiddle")
-const authorize = require("../middlewares/AuthorizeMiddle") // Use your existing middleware
+const express = require("express");
+const router = express.Router();
+const {
+  createOrderFromCart,
+  createAuctionOrder,
+  getOrderById,
+  getMyOrders,
+  updateOrderToPaid,
+  webhook,
+} = require("../controllers/OrderController");
+const protect = require("../middlewares/AuthMiddle");
+const authorize = require("../middlewares/AuthorizeMiddle");
+
+// Public webhook route (no auth needed)
+router.post("/webhook", webhook);
 
 // Protected routes
-router.use(protect)
+router.post("/checkout", protect, createOrderFromCart);
+router.post("/auction/:auctionId", protect, createAuctionOrder);
+router.get("/:id", protect, getOrderById);
+router.get("/myorders", protect, getMyOrders);
+router.put("/:id/pay", protect, updateOrderToPaid);
 
-router.get("/", orderController.getUserOrders)
-router.get("/:id", orderController.getOrder)
-router.patch("/:id/cancel", orderController.cancelOrder)
-
-// Admin routes
-router.use(authorize("admin")) // Use your existing middleware
-router.get("/admin/all", orderController.getAllOrders)
-router.patch("/:id/status", orderController.updateOrderStatus)
-
-module.exports = router
+module.exports = router;

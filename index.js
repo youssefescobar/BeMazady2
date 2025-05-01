@@ -2,7 +2,7 @@ const express = require("express");
 const dotenv = require("dotenv").config();
 const morgan = require("morgan");
 const http = require("http"); // For Socket.IO
-const jwt = require("jsonwebtoken"); 
+const jwt = require("jsonwebtoken");
 const socketIo = require("socket.io");
 const mongoose = require("mongoose");
 
@@ -10,9 +10,7 @@ const compression = require("compression"); // Compression middleware
 const rateLimit = require("express-rate-limit"); // Rate limiting middleware
 const helmet = require("helmet"); // Helmet middleware
 
-
-
-const { initScheduledTasks } = require('./services/scheduledTasks');
+const { initScheduledTasks } = require("./services/scheduledTasks");
 const notificationRoutes = require("./routes/NotificationRoutes");
 const messageRoutes = require("./routes/MessageRoutes");
 const globalhandel = require("./middlewares/ErrorMiddle");
@@ -26,10 +24,8 @@ const AuctionRoute = require("./routes/AuctionRoute");
 const UserRoute = require("./routes/UserRoute");
 const recommendationRoutes = require("./routes/RecommendRoute");
 const CartRoutes = require("./routes/CartRoute");
-const analyticsRoutes = require('./routes/AnalyticsRoutes');
-
-const paymentRoutes = require('./routes/PaymentRoute');
-const orderRoutes = require('./routes/OrderRoute');
+const OrderRoute = require("./routes/OrderRoute");
+// const analyticsRoutes = require("./routes/AnalyticsRoutes");
 
 const ReverseAuctionRoute = require("./routes/ReverseAuctionRoute"); // Add this line
 
@@ -44,7 +40,7 @@ dbConnect();
 // Middleware
 
 app.use(compression());
-// app.use(helmet());  
+// app.use(helmet());
 
 // const limiter = rateLimit({
 //   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -57,20 +53,8 @@ app.use(express.urlencoded({ extended: true })); // Add this line to handle URL-
 
 app.use(morgan("dev"));
 
-// let redirectCounts = {};
-
-// app.use((req, res, next) => {
-//   const url = req.originalUrl;
-//   redirectCounts[url] = (redirectCounts[url] || 0) + 1;
-  
-//   if (redirectCounts[url] > 3) {
-//     console.error(`Redirect loop detected for ${url}`);
-//     return res.status(500).json({ error: 'Redirect loop detected' });
-//   }
-//   next();
-// });
 app.use((err, req, res, next) => {
-  console.error('Server Error:', err.message);
+  console.error("Server Error:", err.message);
 
   // Optional: if you want to differentiate custom errors
   const statusCode = err.statusCode || 500;
@@ -78,7 +62,7 @@ app.use((err, req, res, next) => {
   res.status(statusCode).json({
     status: "error",
     message: err.message || "Internal Server Error",
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+    stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
   });
 });
 
@@ -93,29 +77,12 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/users", UserRoute);
 app.use("/api/recommendations", recommendationRoutes);
-app.use('/api/analytics', analyticsRoutes);
+// app.use('/api/analytics', analyticsRoutes);
 app.use("/api/reverseauctions", ReverseAuctionRoute);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/orders', orderRoutes); 
+app.use("/api/orders", OrderRoute);
 
-
-app.get('/', (req, res) => {
-  res.send('Api is running ya tohamy');
-})
-app.get('/payment/success', (req, res) => {
-  return res.status(200).json({
-    status: "success",
-    message: "Payment successful",
-    data: req.query
-  });
-});
-
-app.get('/payment/failure', (req, res) => {
-  return res.status(200).json({
-    status: "failed",
-    message: "Payment failed",
-    data: req.query
-  });
+app.get("/", (req, res) => {
+  res.send("Api is running ya tohamy");
 });
 // Handle route errors - ONLY ONE catch-all handler
 app.all("*", (req, res, next) => {
@@ -176,6 +143,5 @@ server.listen(PORT, () => {
   setTimeout(() => {
     initScheduledTasks(app);
     console.log("Scheduled tasks initialized");
-  }, 3000)
-
-}); 
+  }, 3000);
+});

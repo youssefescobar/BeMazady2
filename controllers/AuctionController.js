@@ -6,6 +6,9 @@ const { createNotification } = require("../controllers/NotificationController");
 const upload = require("../middlewares/UploadMiddle");
 const CategoryModel = require("../models/category");
 const ApiFeatures = require("../utils/ApiFeatures");
+const Order = require("../models/Order");
+const ApiError = require("../utils/ApiError");
+const { createPaymentIntent } = require("../utils/stripe");
 
 // Create a new auction
 const createAuction = asyncHandler(async (req, res) => {
@@ -18,7 +21,7 @@ const createAuction = asyncHandler(async (req, res) => {
       endDate,
       description,
       title,
-      category
+      category,
     } = req.body;
 
     if (!title) {
@@ -82,8 +85,7 @@ const createAuction = asyncHandler(async (req, res) => {
 
     const populatedAuction = await Auction.findById(auction._id)
       .populate("seller", "username _id")
-      .populate("category", "name")
-      
+      .populate("category", "name");
 
     // ✅ Notify admin
     if (process.env.ADMIN_USER_ID) {
@@ -169,103 +171,105 @@ const placeBid = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: bid });
 });
 
-const buyNowAuction = asyncHandler(async (req, res) => {
+const buyNowAuction = asyncHandler(async (req, res, next) => {
   try {
-    const auction = await Auction.findById(req.params.id)
-      .populate("seller", "username _id");
+    const userId = req.user._id;
+    const auctionId = req.params.id;
 
-    if (!auction) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Auction not found" });
+    const auction = await Auction.findById(auctionId).populate("seller", "username _id");
+    if (!auction) return next(new ApiError("Auction not found", 404));
+    if (auction.status !== "active") return next(new ApiError("Auction is not active", 400));
+    if (!auction.buyNowPrice) return next(new ApiError("This auction does not have a Buy Now option", 400));
+    if (auction.seller._id.toString() === userId.toString()) {
+      return next(new ApiError("You cannot buy your own auction", 400));
     }
 
-    // Check if auction is active
-    if (auction.status !== "active") {
-      return res
-        .status(400)
-        .json({ success: false, message: "Auction is not active" });
-    }
+    const existingOrder = await Order.findOne({ "auctionOrder.auction": auctionId });
+    if (existingOrder) return next(new ApiError("This auction has already been purchased", 400));
 
-    // Check if auction has buyNowPrice
-    if (!auction.buyNowPrice) {
-      return res
-        .status(400)
-        .json({ success: false, message: "This auction does not have a Buy Now option" });
-    }
-
-    // Check if user is not the seller
-    if (auction.seller._id.toString() === req.user.id) {
-      return res
-        .status(400)
-        .json({ success: false, message: "You cannot buy your own auction" });
-    }
-
-    // Create a bid at the buyNowPrice
     const bid = await Bid.create({
-      auction: auction.id,
-      bidder: req.user.id,
+      auction: auctionId,
+      bidder: userId,
       amount: auction.buyNowPrice,
     });
 
-    // Update auction
-    auction.bids.push(bid._id);
-    auction.currentPrice = auction.buyNowPrice;
-    auction.status = "completed";
-    auction.winningBidder = req.user.id;
+    Object.assign(auction, {
+      bids: [...auction.bids, bid._id],
+      currentPrice: auction.buyNowPrice,
+      status: "completed",
+      winningBidder: userId,
+    });
     await auction.save();
 
-    // Get buyer information
-    const buyer = await User.findById(req.user.id, "username");
+    const paymentIntent = await createPaymentIntent({
+      amount: auction.buyNowPrice,
+      userId,
+      auctionId,
+    });
 
-    // Create notification for auction seller
-    await createNotification(
-      req,
-      auction.seller._id,
-      `${buyer.username} has purchased your auction "${auction.title}" using Buy Now for $${auction.buyNowPrice}`,
-      "SYSTEM",
-      req.user.id,
-      { model: "Auction", id: auction._id }
-    );
+    const order = await Order.create({
+      user: userId,
+      auctionOrder: {
+        auction: auctionId,
+        bid: bid._id,
+        price: auction.buyNowPrice,
+        seller: auction.seller._id,
+      },
+      totalPrice: auction.buyNowPrice,
+      paymentMethod: "stripe",
+      paymentIntentId: paymentIntent.id,
+      isAuctionOrder: true,
+    });
 
-    // Notify the buyer
-    await createNotification(
-      req,
-      req.user.id,
-      `Congratulations! You have successfully purchased "${auction.title}" for $${auction.buyNowPrice}`,
-      "SYSTEM",
-      null,
-      { model: "Auction", id: auction._id }
-    );
+    const buyer = await User.findById(userId, "username");
 
-    // Find and notify other bidders they've lost the auction
-    const otherBidders = await Bid.find({
-      auction: auction._id,
-      bidder: { $ne: req.user.id },
-    }).distinct("bidder");
-
-    for (const bidderId of otherBidders) {
-      await createNotification(
+    const notifications = [
+      createNotification(
         req,
-        bidderId,
-        `The auction "${auction.title}" was purchased by another user using the Buy Now option`,
+        auction.seller._id,
+        `${buyer.username} has purchased your auction "${auction.title}" using Buy Now for $${auction.buyNowPrice}.`,
+        "SYSTEM",
+        userId,
+        { model: "Auction", id: auctionId }
+      ),
+      createNotification(
+        req,
+        userId,
+        `You have purchased "${auction.title}" for $${auction.buyNowPrice}. Please complete payment.`,
         "SYSTEM",
         null,
-        { model: "Auction", id: auction._id }
-      );
-    }
+        { model: "Order", id: order._id }
+      ),
+    ];
 
-    res.status(200).json({ 
-      success: true, 
-      message: "Auction purchased successfully using Buy Now",
-      data: { 
-        auction,
-        bid 
-      }
+    const otherBidders = await Bid.find({
+      auction: auctionId,
+      bidder: { $ne: userId },
+    }).distinct("bidder");
+
+    otherBidders.forEach((bidderId) => {
+      notifications.push(
+        createNotification(
+          req,
+          bidderId,
+          `The auction "${auction.title}" was purchased by another user.`,
+          "SYSTEM",
+          null,
+          { model: "Auction", id: auctionId }
+        )
+      );
+    });
+
+    await Promise.all(notifications);
+
+    res.status(200).json({
+      success: true,
+      clientSecret: paymentIntent.client_secret,
+      order,
+      auction: { id: auctionId, title: auction.title },
     });
   } catch (error) {
-    console.error("Error in Buy Now process:", error);
-    res.status(500).json({ success: false, message: error.message });
+    next(new ApiError(error.message, 500));
   }
 });
 
@@ -522,7 +526,7 @@ const updateAuction = asyncHandler(async (req, res) => {
       "status",
       "title",
       "description",
-      "category"
+      "category",
     ];
 
     const updates = {};
@@ -533,7 +537,7 @@ const updateAuction = asyncHandler(async (req, res) => {
             "startPrice",
             "reservePrice",
             "buyNowPrice",
-            "minimumBidIncrement"
+            "minimumBidIncrement",
           ].includes(key)
         ) {
           auction[key] = Number(req.body[key]);
@@ -592,7 +596,8 @@ const updateAuction = asyncHandler(async (req, res) => {
     } else if (Object.keys(updates).length > 0) {
       const updateItems = [];
 
-      if (updates.title) updateItems.push(`title changed to "${updates.title}"`);
+      if (updates.title)
+        updateItems.push(`title changed to "${updates.title}"`);
       if (updates.category) updateItems.push(`category has been updated`);
       if (updates.endDate)
         updateItems.push(
@@ -643,7 +648,10 @@ const deleteAuction = asyncHandler(async (req, res) => {
     }
 
     // Check if user is authorized (owner or admin)
-    if (auction.seller.toString() !== req.user.id && req.user.role !== "admin") {
+    if (
+      auction.seller.toString() !== req.user.id &&
+      req.user.role !== "admin"
+    ) {
       return res.status(403).json({
         success: false,
         message: "You are not authorized to delete this auction",
