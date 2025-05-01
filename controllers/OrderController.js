@@ -58,10 +58,6 @@ exports.cancelOrder = asyncHandler(async (req, res, next) => {
     return next(new ApiError("Cannot cancel order at current status", 400))
   }
 
-  // Update order status
-  order.orderStatus = "cancelled"
-  await order.save()
-
   // If payment was made, create refund transaction
   if (order.paymentStatus === "paid") {
     await Transaction.create({

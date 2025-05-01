@@ -1,4 +1,5 @@
 const User = require("../models/User");
+const Auction = require("../models/Auction");
 const bcrypt = require("bcrypt");
 const path = require("path");
 const jwt = require("jsonwebtoken");
@@ -113,7 +114,6 @@ const updateUser = asyncHandler(async (req, res, next) => {
   });
 });
 
-
 // Update password
 const updatePassword = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
@@ -172,7 +172,6 @@ const deleteUser = asyncHandler(async (req, res, next) => {
   await User.findByIdAndDelete(id);
   res.status(204).send();
 });
-
 
 // Add item to favorites
 const addToFavorites = asyncHandler(async (req, res, next) => {
@@ -262,10 +261,7 @@ const updateUserRole = asyncHandler(async (req, res, next) => {
   const validRoles = ["buyer", "seller"];
   if (!validRoles.includes(role)) {
     return next(
-      new ApiError(
-        "Invalid role. Role must be either buyer or seller",
-        400
-      )
+      new ApiError("Invalid role. Role must be either buyer or seller", 400)
     );
   }
 
@@ -288,6 +284,34 @@ const getLoggedUser = asyncHandler(async (req, res, next) => {
   next();
 });
 
+// Get auctions won or bought by the current user
+const getWonAuctions = asyncHandler(async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Find auctions where the user is the winning bidder
+    const wonAuctions = await Auction.find({
+      winningBidder: userId,
+      status: "completed",
+    })
+      .populate("seller", "username _id")
+      .populate("category", "name")
+      .populate({
+        path: "bids",
+        match: { bidder: userId },
+        options: { sort: { amount: -1 } },
+      })
+      .sort("-endDate");
+
+    res.status(200).json({
+      success: true,
+      data: wonAuctions,
+    });
+  } catch (error) {
+    console.error("Error fetching user's won auctions:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 module.exports = {
   getAllUsers,
@@ -300,5 +324,5 @@ module.exports = {
   getUserFavorites,
   updateUserRole,
   getLoggedUser,
-  
+  getWonAuctions,
 };
