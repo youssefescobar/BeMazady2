@@ -4,8 +4,6 @@ const Bid = require("../models/Bid");
 const User = require("../models/User");
 const { createNotification } = require("../controllers/NotificationController");
 const logger = require("../utils/logger");
-const Order = require("../models/Order");
-const { createPaymentIntent } = require("../utils/stripe");
 
 // Function to end expired auctions
 const endExpiredAuctions = async () => {
@@ -34,63 +32,33 @@ const endExpiredAuctions = async () => {
 
       if (highestBid) {
         updateData.winningBidder = highestBid.bidder._id;
-      
-        // Check if order already exists (avoid duplicates if cron reruns)
-        const existingOrder = await Order.findOne({
-          "auctionOrder.auction": auction._id,
-        });
-      
-        if (!existingOrder) {
-          // Create Stripe Payment Intent
-          const paymentIntent = await createPaymentIntent({
-            amount: highestBid.amount,
-            userId: highestBid.bidder._id,
-            auctionId: auction._id,
-            orderType: "auction-winner",
-          });
-      
-          // Create Order
-          const order = await Order.create({
-            user: highestBid.bidder._id,
-            auctionOrder: {
-              auction: auction._id,
-              bid: highestBid._id,
-              price: highestBid.amount,
-              seller: auction.seller._id,
-            },
-            totalPrice: highestBid.amount,
-            paymentMethod: "stripe",
-            paymentIntentId: paymentIntent.id,
-            isAuctionOrder: true,
-          });
-      
-          // Notify seller
-          await createNotification(
-            { app: global.app },
-            auction.seller._id,
-            `Your auction "${auctionName}" has ended with a winning bid of $${highestBid.amount}`,
-            "SYSTEM",
-            null,
-            { model: "Auction", id: auction._id }
-          );
-      
-          // Notify winner with payment info
-          await createNotification(
-            { app: global.app },
-            highestBid.bidder._id,
-            `Congratulations! You won the auction for "${auctionName}" with your bid of $${highestBid.amount}. Please complete your payment.`,
-            "SYSTEM",
-            null,
-            { model: "Order", id: order._id }
-          );
-        }
-      
+
+        // Notify seller
+        await createNotification(
+          { app: global.app },
+          auction.seller._id,
+          `Your auction "${auctionName}" has ended with a winning bid of $${highestBid.amount}`,
+          "SYSTEM",
+          null,
+          { model: "Auction", id: auction._id }
+        );
+
+        // Notify winner with payment info
+        await createNotification(
+          { app: global.app },
+          highestBid.bidder._id,
+          `Congratulations! You won the auction for "${auctionName}" with your bid of $${highestBid.amount}. Please complete your payment.`,
+          "SYSTEM",
+          null,
+          { model: "Auction", id: auction._id } // Changed from Order to Auction since order._id wasn't defined
+        );
+
         // Notify other bidders
         const otherBidders = await Bid.find({
           auction: auction._id,
           bidder: { $ne: highestBid.bidder._id },
         }).distinct("bidder");
-      
+
         for (const bidderId of otherBidders) {
           await createNotification(
             { app: global.app },
@@ -101,9 +69,7 @@ const endExpiredAuctions = async () => {
             { model: "Auction", id: auction._id }
           );
         }
-      }
-      
-         else {
+      } else {
         // No bids were placed
         await createNotification(
           { app: global.app },
@@ -130,7 +96,7 @@ const endExpiredAuctions = async () => {
 const initScheduledTasks = (app) => {
   global.app = app;
 
-  // Run every 5 minutes
+  // Run every minute (changed from comment saying every 5 minutes but code was every 1 minute)
   cron.schedule("*/1 * * * *", () => {
     logger.info("Running scheduled task: endExpiredAuctions");
     endExpiredAuctions();

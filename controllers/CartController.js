@@ -2,8 +2,7 @@ const asyncHandler = require("express-async-handler")
 const Cart = require("../models/Cart")
 const Item = require("../models/Item")
 const ApiError = require("../utils/ApiError")
-const Order = require("../models/Order")
-const stripe = require("../utils/stripe")
+
 
 // Get User Cart - Private
 const GetCart = asyncHandler(async (req, res, next) => {
@@ -68,72 +67,72 @@ const ClearCart = asyncHandler(async (req, res, next) => {
 })
 
 // Prepare Cart for Checkout - Private
-const checkoutCart = asyncHandler(async (req, res, next) => {
-  const cart = await Cart.findOne({ user: req.user._id }).populate({
-    path: "items.item",
-    populate: { path: "owner", select: "_id" },
-  });
+// const checkoutCart = asyncHandler(async (req, res, next) => {
+//   const cart = await Cart.findOne({ user: req.user._id }).populate({
+//     path: "items.item",
+//     populate: { path: "owner", select: "_id" },
+//   });
   
 
-  if (!cart || cart.items.length === 0) {
-    return res.status(400).json({ success: false, message: "Cart is empty." });
-  }
+//   if (!cart || cart.items.length === 0) {
+//     return res.status(400).json({ success: false, message: "Cart is empty." });
+//   }
 
-  let totalPrice = 0;
-  const orderItems = [];
+//   let totalPrice = 0;
+//   const orderItems = [];
 
-  for (const cartItem of cart.items) {
-    const item = cartItem.item;
-    if (!item || item.item_status !== "available") {
-      return res.status(400).json({ success: false, message: `Item "${item?.title || 'Unknown'}" is not available.` });
-    }
+//   for (const cartItem of cart.items) {
+//     const item = cartItem.item;
+//     if (!item || item.item_status !== "available") {
+//       return res.status(400).json({ success: false, message: `Item "${item?.title || 'Unknown'}" is not available.` });
+//     }
 
-    totalPrice += item.price * cartItem.quantity;
+//     totalPrice += item.price * cartItem.quantity;
 
-    orderItems.push({
-      item: item._id,
-      quantity: cartItem.quantity,
-      priceAtPurchase: item.price,
-      seller: item.owner,
-    });
+//     orderItems.push({
+//       item: item._id,
+//       quantity: cartItem.quantity,
+//       priceAtPurchase: item.price,
+//       seller: item.owner,
+//     });
 
-    await Item.updateOne({ _id: item._id }, { item_status: "pending" });
+//     await Item.updateOne({ _id: item._id }, { item_status: "pending" });
 
-  }
+//   }
 
-  const paymentIntent = await stripe.paymentIntents.create({
-    amount: totalPrice * 100,
-    currency: "usd",
-    metadata: {
-      userId: req.user._id.toString(),
-      orderType: "item-cart-checkout",
-    },
-  });
+//   const paymentIntent = await stripe.paymentIntents.create({
+//     amount: totalPrice * 100,
+//     currency: "usd",
+//     metadata: {
+//       userId: req.user._id.toString(),
+//       orderType: "item-cart-checkout",
+//     },
+//   });
 
-  const order = await Order.create({
-    user: req.user._id,
-    orderItems,
-    totalPrice,
-    paymentMethod: "stripe",
-    paymentIntentId: paymentIntent.id,
-  });
+//   const order = await Order.create({
+//     user: req.user._id,
+//     orderItems,
+//     totalPrice,
+//     paymentMethod: "stripe",
+//     paymentIntentId: paymentIntent.id,
+//   });
 
-  // Clear cart
-  cart.items = [];
-  cart.totalPrice = 0;
-  await cart.save();
+//   // Clear cart
+//   cart.items = [];
+//   cart.totalPrice = 0;
+//   await cart.save();
 
-  res.status(200).json({
-    success: true,
-    clientSecret: paymentIntent.client_secret,
-    order,
-  });
-});
+//   res.status(200).json({
+//     success: true,
+//     clientSecret: paymentIntent.client_secret,
+//     order,
+//   });
+// });
 
 module.exports = {
   GetCart,
   AddToCart,
   RemoveFromCart,
   ClearCart,
-  checkoutCart, // Make sure this is exported
+  // checkoutCart, // Make sure this is exported
 }

@@ -24,7 +24,7 @@ const AuctionRoute = require("./routes/AuctionRoute");
 const UserRoute = require("./routes/UserRoute");
 const recommendationRoutes = require("./routes/RecommendRoute");
 const CartRoutes = require("./routes/CartRoute");
-const OrderRoute = require("./routes/OrderRoute");
+// const OrderRoute = require("./routes/OrderRoute");
 // const analyticsRoutes = require("./routes/AnalyticsRoutes");
 
 const ReverseAuctionRoute = require("./routes/ReverseAuctionRoute"); // Add this line
@@ -79,7 +79,7 @@ app.use("/api/users", UserRoute);
 app.use("/api/recommendations", recommendationRoutes);
 // app.use('/api/analytics', analyticsRoutes);
 app.use("/api/reverseauctions", ReverseAuctionRoute);
-app.use("/api/orders", OrderRoute);
+// app.use("/api/orders", OrderRoute);
 
 app.get("/", (req, res) => {
   res.send("Api is running ya tohamy");

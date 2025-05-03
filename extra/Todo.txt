@@ -3,7 +3,9 @@ Feel free to update / leave notes.
 Todo:
 
 1. Socket for irl
-2. Ai (recommendation , img , nlp)
+2. cart check out doesnt work
+3. order routes needs edititng based on new order 
+4. check everything
 
 
 6. user interaction model for recommendation system (fl a5er)

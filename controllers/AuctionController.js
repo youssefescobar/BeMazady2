@@ -8,7 +8,7 @@ const CategoryModel = require("../models/category");
 const ApiFeatures = require("../utils/ApiFeatures");
 const Order = require("../models/Order");
 const ApiError = require("../utils/ApiError");
-const { createPaymentIntent } = require("../utils/stripe");
+
 
 // Create a new auction
 const createAuction = asyncHandler(async (req, res) => {
@@ -184,8 +184,11 @@ const buyNowAuction = asyncHandler(async (req, res, next) => {
       return next(new ApiError("You cannot buy your own auction", 400));
     }
 
-    const existingOrder = await Order.findOne({ "auctionOrder.auction": auctionId });
-    if (existingOrder) return next(new ApiError("This auction has already been purchased", 400));
+    const existingBid = await Bid.findOne({ 
+      auction: auctionId,
+      amount: auction.buyNowPrice
+    });
+    if (existingBid) return next(new ApiError("This auction has already been purchased", 400));
 
     const bid = await Bid.create({
       auction: auctionId,
@@ -201,26 +204,6 @@ const buyNowAuction = asyncHandler(async (req, res, next) => {
     });
     await auction.save();
 
-    const paymentIntent = await createPaymentIntent({
-      amount: auction.buyNowPrice,
-      userId,
-      auctionId,
-    });
-
-    const order = await Order.create({
-      user: userId,
-      auctionOrder: {
-        auction: auctionId,
-        bid: bid._id,
-        price: auction.buyNowPrice,
-        seller: auction.seller._id,
-      },
-      totalPrice: auction.buyNowPrice,
-      paymentMethod: "stripe",
-      paymentIntentId: paymentIntent.id,
-      isAuctionOrder: true,
-    });
-
     const buyer = await User.findById(userId, "username");
 
     const notifications = [
@@ -235,10 +218,10 @@ const buyNowAuction = asyncHandler(async (req, res, next) => {
       createNotification(
         req,
         userId,
-        `You have purchased "${auction.title}" for $${auction.buyNowPrice}. Please complete payment.`,
+        `You have purchased "${auction.title}" for $${auction.buyNowPrice}.`,
         "SYSTEM",
         null,
-        { model: "Order", id: order._id }
+        { model: "Auction", id: auctionId }
       ),
     ];
 
@@ -264,9 +247,12 @@ const buyNowAuction = asyncHandler(async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      clientSecret: paymentIntent.client_secret,
-      order,
-      auction: { id: auctionId, title: auction.title },
+      auction: { 
+        id: auctionId, 
+        title: auction.title,
+        price: auction.buyNowPrice
+      },
+      message: "Auction purchased successfully"
     });
   } catch (error) {
     next(new ApiError(error.message, 500));
