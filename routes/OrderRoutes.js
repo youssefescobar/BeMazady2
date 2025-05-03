@@ -6,7 +6,7 @@ const {
   getMyOrders,
   getAllOrders,
   processRefund
-} = require('../controllers/orderController');
+} = require('../controllers/OrderController');
 const protect = require('../middlewares/AuthMiddle');
 const authorize = require('../middlewares/AuthorizeMiddle'); // Fixed import path
 
