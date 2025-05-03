@@ -246,6 +246,7 @@ const buyNowAuction = asyncHandler(async (req, res, next) => {
           product_data: {
             name: auction.title,
             description: `Buy Now: ${auction.title}`,
+            images: [auction.auctionCover],
             metadata: { auctionId: auction._id.toString() }
           },
           unit_amount: Math.round(auction.buyNowPrice * 100),

@@ -8,19 +8,48 @@ const auctionEmails = {
    * @param {object} auction - Auction document
    * @param {object} order - Order document with payment link
    */
-  notifyWinner: async (email, auction, order) => {
-    const subject = `You won the auction for ${auction.title}!`;
+  /**
+ * Notifies the auction winner via email with payment instructions
+ * @param {string} email - Winner's email address
+ * @param {object} auction - Auction details
+ * @param {object} order - Order/payment details
+ */
+    notifyWinner : async (email, auction, order) => {
+    const paymentExpiryDate = order.paymentSession.expiresAt.toLocaleString();
+    const paymentDeadline = new Date(order.paymentSession.expiresAt);
+    paymentDeadline.setDate(paymentDeadline.getDate() + 3);
+    
+    const subject = `Congratulations! You won: ${auction.title}`;
     const message = `
-      <h2>Congratulations!</h2>
-      <p>You've won the auction for <strong>${auction.title}</strong> 
-      with your bid of <strong>$${order.totalAmount}</strong>.</p>
-      
-      <p><a href="${order.paymentSession.paymentUrl}">Complete your payment here</a> 
-      (expires ${order.paymentSession.expiresAt.toLocaleString()})</p>
-      
-      <p>Payment must be completed within 3 days to secure your item.</p>
-      
-      <small>Auction ID: ${auction._id}</small>
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #2ecc71;">Congratulations!</h1>
+        
+        <p style="font-size: 16px; line-height: 1.6;">
+          You've successfully won the auction for <strong>${auction.title}</strong> 
+          with your winning bid of <strong>$${order.totalAmount.toFixed(2)}</strong>.
+        </p>
+        
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <h3 style="margin-top: 0;">Next Steps:</h3>
+          <ol style="padding-left: 20px;">
+            <li style="margin-bottom: 10px;">
+              <a href="${order.paymentSession.paymentUrl}" 
+                style="color: #3498db; text-decoration: none; font-weight: bold;">
+                Complete your payment here
+              </a> 
+              <span style="color: #7f8c8d; font-size: 14px;">
+                (Link expires: ${paymentExpiryDate})
+              </span>
+            </li>
+            <li>Payment must be completed by ${paymentDeadline.toLocaleString()} to secure your item</li>
+          </ol>
+        </div>
+        
+        <p style="font-size: 14px; color: #7f8c8d; border-top: 1px solid #eee; padding-top: 15px;">
+          Auction ID: ${auction._id}<br>
+          Thank you for participating in our auction!
+        </p>
+      </div>
     `;
 
     await sendEmail({
