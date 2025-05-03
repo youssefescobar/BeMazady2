@@ -1,9 +1,7 @@
-// controllers/AnalyticsController.js
 const asyncHandler = require('express-async-handler');
 const ApiError = require('../utils/ApiError');
 const analyticsService = require('../services/analyticsService');
-
-// Get admin dashboard statistics
+// Get comprehensive admin dashboard statistics
 const getAdminDashboard = asyncHandler(async (req, res) => {
   const { period } = req.query;
   
@@ -15,7 +13,7 @@ const getAdminDashboard = asyncHandler(async (req, res) => {
   });
 });
 
-// Get seller statistics
+// Get seller dashboard statistics
 const getSellerDashboard = asyncHandler(async (req, res) => {
   const { period } = req.query;
   const sellerId = req.user.id;
@@ -29,7 +27,7 @@ const getSellerDashboard = asyncHandler(async (req, res) => {
 });
 
 // Get item analytics
-const getItemAnalytics = asyncHandler(async (req, res, next) => {
+const getItemAnalytics = asyncHandler(async (req, res) => {
   const { itemId } = req.params;
   
   const stats = await analyticsService.getItemAnalytics(itemId);
@@ -42,152 +40,105 @@ const getItemAnalytics = asyncHandler(async (req, res, next) => {
 
 // Get user growth analytics (admin only)
 const getUserGrowthAnalytics = asyncHandler(async (req, res) => {
-  const User = require('../models/User');
-  const { startDate, endDate } = req.query;
+  const { startDate, endDate, groupBy } = req.query;
   
-  // Parse dates or use defaults
-  const start = startDate ? new Date(startDate) : new Date(new Date().setMonth(new Date().getMonth() - 6));
-  const end = endDate ? new Date(endDate) : new Date();
-  
-  // Get user signups by month
-  const userGrowth = await User.aggregate([
-    { 
-      $match: { 
-        createdAt: { $gte: start, $lte: end }
-      } 
-    },
-    {
-      $group: {
-        _id: { 
-          year: { $year: '$createdAt' },
-          month: { $month: '$createdAt' }
-        },
-        count: { $sum: 1 }
-      }
-    },
-    { 
-      $sort: { 
-        '_id.year': 1, 
-        '_id.month': 1 
-      } 
-    },
-    {
-      $project: {
-        _id: 0,
-        date: {
-          $concat: [
-            { $toString: '$_id.year' },
-            '-',
-            {
-              $cond: {
-                if: { $lt: ['$_id.month', 10] },
-                then: { $concat: ['0', { $toString: '$_id.month' }] },
-                else: { $toString: '$_id.month' }
-              }
-            }
-          ]
-        },
-        count: 1
-      }
-    }
-  ]);
-  
-  // Get user count by role
-  const usersByRole = await User.aggregate([
-    {
-      $group: {
-        _id: '$role',
-        count: { $sum: 1 }
-      }
-    }
-  ]);
+  const analytics = await analyticsService.getUserGrowthAnalytics(
+    startDate, 
+    endDate, 
+    groupBy
+  );
   
   res.status(200).json({
     success: true,
-    data: {
-      growth: userGrowth,
-      byRole: usersByRole
-    }
+    data: analytics
   });
 });
 
 // Get auction analytics (admin only)
 const getAuctionAnalytics = asyncHandler(async (req, res) => {
-  const Auction = require('../models/Auction');
-  const { startDate, endDate } = req.query;
+  const { startDate, endDate, groupBy } = req.query;
   
-  // Parse dates or use defaults
-  const start = startDate ? new Date(startDate) : new Date(new Date().setMonth(new Date().getMonth() - 6));
-  const end = endDate ? new Date(endDate) : new Date();
-  
-  // Get auctions by status
-  const auctionsByStatus = await Auction.aggregate([
-    {
-      $group: {
-        _id: '$status',
-        count: { $sum: 1 }
-      }
-    }
-  ]);
-  
-  // Get auctions by date
-  const auctionsByDate = await Auction.aggregate([
-    { 
-      $match: { 
-        createdAt: { $gte: start, $lte: end }
-      } 
-    },
-    {
-      $group: {
-        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-        count: { $sum: 1 },
-        completed: {
-          $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
-        },
-        active: {
-          $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] }
-        },
-        cancelled: {
-          $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] }
-        }
-      }
-    },
-    { $sort: { _id: 1 } }
-  ]);
-  
-  // Get average auction duration
-  const avgDuration = await Auction.aggregate([
-    {
-      $match: {
-        status: 'completed',
-        endDate: { $exists: true },
-        createdAt: { $exists: true }
-      }
-    },
-    {
-      $project: {
-        duration: { $subtract: ['$endDate', '$createdAt'] }
-      }
-    },
-    {
-      $group: {
-        _id: null,
-        avgDurationMs: { $avg: '$duration' }
-      }
-    }
-  ]);
-  
-  const avgDurationDays = avgDuration.length > 0 
-    ? (avgDuration[0].avgDurationMs / (1000 * 60 * 60 * 24)).toFixed(2)
-    : 0;
+  const analytics = await analyticsService.getAuctionAnalytics(
+    startDate, 
+    endDate, 
+    groupBy
+  );
   
   res.status(200).json({
     success: true,
-    data: {
-      byStatus: auctionsByStatus,
-      byDate: auctionsByDate,
-      avgDurationDays
-    }
+    data: analytics
+  });
+});
+
+// Get financial report with commission breakdown (admin only)
+const getFinancialReport = asyncHandler(async (req, res) => {
+  const { startDate, endDate, groupBy = 'month' } = req.query;
+  
+  const report = await analyticsService.getFinancialReport(startDate, endDate, groupBy);
+  
+  res.status(200).json({
+    success: true,
+    data: report
+  });
+});
+
+// Get commission analytics (admin only)
+const getCommissionAnalytics = asyncHandler(async (req, res) => {
+  const { period, detailed } = req.query;
+  
+  const stats = await analyticsService.getCommissionAnalytics(period, detailed);
+  
+  res.status(200).json({
+    success: true,
+    data: stats
+  });
+});
+
+// Get top sellers analytics (admin only)
+const getTopSellers = asyncHandler(async (req, res) => {
+  const { limit, period } = req.query;
+  
+  const sellers = await analyticsService.getTopSellers(limit, period);
+  
+  res.status(200).json({
+    success: true,
+    data: sellers
+  });
+});
+
+// Get category performance analytics (admin only)
+const getCategoryAnalytics = asyncHandler(async (req, res) => {
+  const { period } = req.query;
+  
+  const stats = await analyticsService.getCategoryAnalytics(period);
+  
+  res.status(200).json({
+    success: true,
+    data: stats
+  });
+});
+
+// Get platform growth metrics (admin only)
+const getPlatformGrowth = asyncHandler(async (req, res) => {
+  const { startDate, endDate } = req.query;
+  
+  const growth = await analyticsService.getPlatformGrowth(startDate, endDate);
+  
+  res.status(200).json({
+    success: true,
+    data: growth
+  });
+});
+
+// Get conversion metrics (admin only)
+const getConversionMetrics = asyncHandler(async (req, res) => {
+  const { period } = req.query;
+  
+  const metrics = await analyticsService.getConversionMetrics(period);
+  
+  res.status(200).json({
+    success: true,
+    data: metrics
   });
 });
 
@@ -196,5 +147,11 @@ module.exports = {
   getSellerDashboard,
   getItemAnalytics,
   getUserGrowthAnalytics,
-  getAuctionAnalytics
+  getAuctionAnalytics,
+  getFinancialReport,
+  getCommissionAnalytics,
+  getTopSellers,
+  getCategoryAnalytics,
+  getPlatformGrowth,
+  getConversionMetrics
 };
