@@ -49,6 +49,10 @@ app.use(compression());
 //   message: "Too many requests from this IP, please try again later."
 // });
 // app.use(limiter);
+
+app.use("/api/payment", paymentRoutes);
+
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // Add this line to handle URL-encoded data
 
@@ -78,7 +82,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/users", UserRoute);
 app.use("/api/recommendations", recommendationRoutes);
-app.use("/api/payment", paymentRoutes);
+
 app.use("/api/orders", OrderRoutes);
 // app.use('/api/analytics', analyticsRoutes);
 app.use("/api/reverseauctions", ReverseAuctionRoute);

@@ -61,33 +61,55 @@ const handleWebhook = asyncHandler(async (req, res) => {
   const sig = req.headers["stripe-signature"];
   let event;
 
+  console.log("➡️ Received webhook call");
+  console.log("Headers:", req.headers);
+
   try {
     event = stripe.webhooks.constructEvent(
       req.body,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET
     );
+    console.log("✅ Webhook event constructed successfully:", event.type);
   } catch (err) {
-    console.error("Webhook error:", err.message);
+    console.error("❌ Webhook signature verification failed:", err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
-    const order = await Order.findOne({
-      "paymentSession.sessionId": session.id,
-    });
+    console.log("🧾 Checkout session completed:", session);
 
-    if (order && order.status === "pending") {
-      order.status = "paid";
-      await order.save();
+    try {
+      const order = await Order.findOne({
+        "paymentSession.sessionId": session.id,
+      });
 
-      // Here you can add notifications or other post-payment logic
+      if (!order) {
+        console.error("❌ Order not found for session ID:", session.id);
+        return res.status(404).send("Order not found");
+      }
+
+      console.log("📦 Order found:", order._id);
+
+      if (order.status === "pending") {
+        order.status = "paid";
+        await order.save();
+        console.log("💰 Order status updated to 'paid'");
+      } else {
+        console.log("⚠️ Order already paid or not in pending state");
+      }
+
+    } catch (err) {
+      console.error("❌ Error processing webhook for session:", session.id);
+      console.error(err);
+      return res.status(500).send("Internal Server Error during order update");
     }
   }
 
   res.json({ received: true });
 });
+
 
 module.exports = {
   createCheckoutSession,
