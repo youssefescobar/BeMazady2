@@ -26,7 +26,7 @@ const recommendationRoutes = require("./routes/RecommendRoute");
 const CartRoutes = require("./routes/CartRoute");
 const paymentRoutes = require("./routes/paymentRoutes");
 const OrderRoutes = require("./routes/OrderRoutes");
-// const analyticsRoutes = require("./routes/AnalyticsRoutes");
+const analyticsRoutes = require("./routes/AnalyticsRoutes");
 
 const ReverseAuctionRoute = require("./routes/ReverseAuctionRoute"); // Add this line
 
@@ -80,7 +80,7 @@ app.use("/api/users", UserRoute);
 app.use("/api/recommendations", recommendationRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/orders", OrderRoutes);
-// app.use('/api/analytics', analyticsRoutes);
+app.use('/api/analytics', analyticsRoutes);
 app.use("/api/reverseauctions", ReverseAuctionRoute);
 
 

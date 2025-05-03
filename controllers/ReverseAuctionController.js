@@ -7,7 +7,6 @@ const User = require("../models/User");
 const Notification = require("../models/Notification");
 
 const Order = require("../models/Order");
-const Transaction = require("../models/Transactions");
 
 // @desc    Create a new reverse auction
 // @route   POST /api/reverseauctions
