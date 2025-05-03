@@ -6,6 +6,9 @@ const Order = require("../models/Order");
 const { createCheckoutSession } = require("./PaymentController");
 const mongoose = require("mongoose");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const auctionEmails = require("../extra/Emaildb");
+const User = require("../models/User");
+const { createNotification } = require("./NotificationController");
 
 // Get User Cart - Private
 const GetCart = asyncHandler(async (req, res, next) => {
@@ -83,12 +86,11 @@ const checkoutCart = asyncHandler(async (req, res, next) => {
   session.startTransaction();
 
   try {
-    // 1. Load and validate cart
     const cart = await Cart.findOne({ user: req.userId })
       .populate({
         path: "items.item",
-        select: "price owner item_status",
-        populate: { path: "owner", select: "_id" }
+        select: "price owner item_status title",
+        populate: { path: "owner", select: "_id email username" }
       })
       .session(session);
 
@@ -97,11 +99,10 @@ const checkoutCart = asyncHandler(async (req, res, next) => {
       return next(new ApiError("Your cart is empty", 400));
     }
 
-    // 2. Validate all items are available
     const unavailableItems = cart.items.filter(
       item => !item.item || item.item.item_status !== "available"
     );
-    
+
     if (unavailableItems.length > 0) {
       await session.abortTransaction();
       return next(new ApiError(
@@ -110,7 +111,6 @@ const checkoutCart = asyncHandler(async (req, res, next) => {
       ));
     }
 
-    // 3. Prepare order data
     const orderItems = cart.items.map(item => ({
       itemType: "item",
       item: item.item._id,
@@ -124,7 +124,6 @@ const checkoutCart = asyncHandler(async (req, res, next) => {
       0
     );
 
-    // 4. Create order with temporary payment session
     const [order] = await Order.create([{
       user: req.userId,
       items: orderItems,
@@ -142,7 +141,6 @@ const checkoutCart = asyncHandler(async (req, res, next) => {
       return next(new ApiError("Order creation failed", 500));
     }
 
-    // 5. Create Stripe checkout session
     const stripeSession = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items: orderItems.map(item => ({
@@ -164,7 +162,6 @@ const checkoutCart = asyncHandler(async (req, res, next) => {
       expires_at: Math.floor(Date.now() / 1000) + 3600
     });
 
-    // 6. Update order with real payment details
     order.paymentSession = {
       sessionId: stripeSession.id,
       paymentUrl: stripeSession.url,
@@ -172,10 +169,55 @@ const checkoutCart = asyncHandler(async (req, res, next) => {
     };
     await order.save({ session });
 
-    // 7. Clear cart
     cart.items = [];
     cart.totalPrice = 0;
     await cart.save({ session });
+
+    // 🟨 Notify seller about order
+    const buyer = await User.findById(req.userId, "username").session(session);
+    const uniqueSellers = [
+      ...new Set(cart.items.map(item => item.item.owner._id.toString()))
+    ];
+
+    await Promise.all(
+      uniqueSellers.map(sellerId => {
+        const sellerItems = cart.items.filter(
+          i => i.item.owner._id.toString() === sellerId
+        );
+
+        return createNotification(
+          req,
+          sellerId,
+          `${buyer.username} placed an order including: ${sellerItems
+            .map(i => `"${i.item.title}"`)
+            .join(", ")}`,
+          "SYSTEM",
+          req.userId,
+          { model: "Order", id: order._id }
+        );
+      })
+    );
+
+    // 🟨 Notify buyer about successful order placement and payment link
+    await createNotification(
+      req,
+      req.userId,
+      `You successfully placed an order. Complete payment here: ${stripeSession.url}`,
+      "SYSTEM",
+      null,
+      { model: "Order", id: order._id }
+    );
+
+    // 🟨 Send email to the buyer (using the new `sendOrderEmail` method)
+    await auctionEmails.sendOrderEmail(
+      req.user.email, // Buyer email
+      cart.items.map(item => ({
+        title: item.item.title,
+        price: item.item.price,
+        quantity: item.quantity
+      })), // Map the cart items for email
+      order // Pass the full order object to access the payment session
+    );
 
     await session.commitTransaction();
 
@@ -196,6 +238,8 @@ const checkoutCart = asyncHandler(async (req, res, next) => {
     session.endSession();
   }
 });
+
+
 
 module.exports = {
   GetCart,

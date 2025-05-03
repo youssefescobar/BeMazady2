@@ -3,8 +3,7 @@ Feel free to update / leave notes.
 Todo:
 
 1. Socket for irl
-2. add order filttering
-3. add email + noties for buy now and checkout based on emaildb template
+
 4. fix callback
 5. double check payment flow
 

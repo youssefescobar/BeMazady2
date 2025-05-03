@@ -88,7 +88,14 @@ const updateOrderStatus = asyncHandler(async (req, res, next) => {
 // @route   GET /api/orders/my-orders
 // @access  Private
 const getMyOrders = asyncHandler(async (req, res, next) => {
-  const orders = await Order.find({ user: req.userId })
+  const { status } = req.query;
+
+  const filter = { user: req.userId };
+  if (status) {
+    filter.status = status;
+  }
+
+  const orders = await Order.find(filter)
     .sort("-createdAt")
     .populate("items.item", "name price image");
 
@@ -103,7 +110,14 @@ const getMyOrders = asyncHandler(async (req, res, next) => {
 // @route   GET /api/orders
 // @access  Private/Admin
 const getAllOrders = asyncHandler(async (req, res, next) => {
-  const orders = await Order.find()
+  const { status } = req.query;
+
+  const filter = {};
+  if (status) {
+    filter.status = status;
+  }
+
+  const orders = await Order.find(filter)
     .populate("user", "name email")
     .sort("-createdAt");
 

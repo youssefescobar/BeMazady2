@@ -180,11 +180,12 @@ const buyNowAuction = asyncHandler(async (req, res, next) => {
 
   try {
     const userId = req.user._id;
+    const userEmail = req.user.email;
     const auctionId = req.params.id;
 
     // 1. Validate auction
     const auction = await Auction.findById(auctionId)
-      .populate("seller", "username _id")
+      .populate("seller", "username _id email")
       .session(session);
 
     if (!auction) {
@@ -256,7 +257,7 @@ const buyNowAuction = asyncHandler(async (req, res, next) => {
       mode: "payment",
       success_url: `${process.env.FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}&order_id=${order._id}`,
       cancel_url: `${process.env.FRONTEND_URL}/payment/cancel?order_id=${order._id}`,
-      customer_email: req.user.email,
+      customer_email: userEmail,
       metadata: { orderId: order._id.toString() },
       expires_at: Math.floor(Date.now() / 1000) + 3600 // 1 hour
     });
@@ -274,7 +275,13 @@ const buyNowAuction = asyncHandler(async (req, res, next) => {
     auction.winningBidder = userId;
     await auction.save({ session });
 
-    // 7. Send notifications
+    // 7. Send email notifications
+    await Promise.all([
+      auctionEmails.notifyBuyNow(userEmail, auction, order),
+      auctionEmails.notifySeller(auction.seller.email, auction, order)
+    ]);
+
+    // 8. Create in-app notifications
     const buyer = await User.findById(userId, "username").session(session);
 
     await Promise.all([
