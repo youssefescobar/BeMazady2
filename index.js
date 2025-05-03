@@ -24,6 +24,8 @@ const AuctionRoute = require("./routes/AuctionRoute");
 const UserRoute = require("./routes/UserRoute");
 const recommendationRoutes = require("./routes/RecommendRoute");
 const CartRoutes = require("./routes/CartRoute");
+const paymentRoutes = require("./routes/paymentRoutes");
+const OrderRoutes = require("./routes/OrderRoutes");
 // const OrderRoute = require("./routes/OrderRoute");
 // const analyticsRoutes = require("./routes/AnalyticsRoutes");
 
@@ -77,6 +79,8 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/users", UserRoute);
 app.use("/api/recommendations", recommendationRoutes);
+app.use("/api/payment", paymentRoutes);
+app.use("/api/orders", OrderRoutes);
 // app.use('/api/analytics', analyticsRoutes);
 app.use("/api/reverseauctions", ReverseAuctionRoute);
 // app.use("/api/orders", OrderRoute);

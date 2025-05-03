@@ -8,7 +8,9 @@ const CategoryModel = require("../models/category");
 const ApiFeatures = require("../utils/ApiFeatures");
 const Order = require("../models/Order");
 const ApiError = require("../utils/ApiError");
-
+const { createCheckoutSession } = require("./PaymentController");
+const mongoose = require("mongoose");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 // Create a new auction
 const createAuction = asyncHandler(async (req, res) => {
@@ -172,45 +174,112 @@ const placeBid = asyncHandler(async (req, res) => {
 });
 
 const buyNowAuction = asyncHandler(async (req, res, next) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const userId = req.user._id;
     const auctionId = req.params.id;
 
-    const auction = await Auction.findById(auctionId).populate("seller", "username _id");
-    if (!auction) return next(new ApiError("Auction not found", 404));
-    if (auction.status !== "active") return next(new ApiError("Auction is not active", 400));
-    if (!auction.buyNowPrice) return next(new ApiError("This auction does not have a Buy Now option", 400));
+    // 1. Validate auction
+    const auction = await Auction.findById(auctionId)
+      .populate("seller", "username _id")
+      .session(session);
+
+    if (!auction) {
+      await session.abortTransaction();
+      return next(new ApiError("Auction not found", 404));
+    }
+
+    if (auction.status !== "active") {
+      await session.abortTransaction();
+      return next(new ApiError("Auction is not active", 400));
+    }
+
+    if (!auction.buyNowPrice) {
+      await session.abortTransaction();
+      return next(new ApiError("This auction does not have a Buy Now option", 400));
+    }
+
     if (auction.seller._id.toString() === userId.toString()) {
+      await session.abortTransaction();
       return next(new ApiError("You cannot buy your own auction", 400));
     }
 
-    const existingBid = await Bid.findOne({ 
+    // 2. Check for existing purchase
+    const existingBid = await Bid.findOne({
       auction: auctionId,
       amount: auction.buyNowPrice
+    }).session(session);
+
+    if (existingBid) {
+      await session.abortTransaction();
+      return next(new ApiError("This auction has already been purchased", 400));
+    }
+
+    // 3. Create order with temporary payment session
+    const [order] = await Order.create([{
+      user: userId,
+      items: [{
+        itemType: "auction",
+        item: auctionId,
+        quantity: 1,
+        priceAtPurchase: auction.buyNowPrice,
+        seller: auction.seller._id,
+      }],
+      totalAmount: auction.buyNowPrice,
+      status: "pending",
+      paymentSession: {
+        sessionId: "temp_" + Date.now(),
+        paymentUrl: "https://example.com/pending",
+        expiresAt: new Date(Date.now() + 3600000) // 1 hour
+      }
+    }], { session });
+
+    // 4. Create Stripe checkout session
+    const stripeSession = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [{
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: auction.title,
+            description: `Buy Now: ${auction.title}`,
+            metadata: { auctionId: auction._id.toString() }
+          },
+          unit_amount: Math.round(auction.buyNowPrice * 100),
+        },
+        quantity: 1,
+      }],
+      mode: "payment",
+      success_url: `${process.env.FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}&order_id=${order._id}`,
+      cancel_url: `${process.env.FRONTEND_URL}/payment/cancel?order_id=${order._id}`,
+      customer_email: req.user.email,
+      metadata: { orderId: order._id.toString() },
+      expires_at: Math.floor(Date.now() / 1000) + 3600 // 1 hour
     });
-    if (existingBid) return next(new ApiError("This auction has already been purchased", 400));
 
-    const bid = await Bid.create({
-      auction: auctionId,
-      bidder: userId,
-      amount: auction.buyNowPrice,
-    });
+    // 5. Update order with real payment details
+    order.paymentSession = {
+      sessionId: stripeSession.id,
+      paymentUrl: stripeSession.url,
+      expiresAt: new Date(stripeSession.expires_at * 1000)
+    };
+    await order.save({ session });
 
-    Object.assign(auction, {
-      bids: [...auction.bids, bid._id],
-      currentPrice: auction.buyNowPrice,
-      status: "completed",
-      winningBidder: userId,
-    });
-    await auction.save();
+    // 6. Update auction status
+    auction.status = "completed";
+    auction.winningBidder = userId;
+    await auction.save({ session });
 
-    const buyer = await User.findById(userId, "username");
+    // 7. Send notifications
+    const buyer = await User.findById(userId, "username").session(session);
 
-    const notifications = [
+    await Promise.all([
       createNotification(
         req,
         auction.seller._id,
-        `${buyer.username} has purchased your auction "${auction.title}" using Buy Now for $${auction.buyNowPrice}.`,
+        `${buyer.username} has purchased your auction "${auction.title}" for $${auction.buyNowPrice}.`,
         "SYSTEM",
         userId,
         { model: "Auction", id: auctionId }
@@ -218,44 +287,27 @@ const buyNowAuction = asyncHandler(async (req, res, next) => {
       createNotification(
         req,
         userId,
-        `You have purchased "${auction.title}" for $${auction.buyNowPrice}.`,
+        `You purchased "${auction.title}". Complete payment here: ${stripeSession.url}`,
         "SYSTEM",
         null,
         { model: "Auction", id: auctionId }
-      ),
-    ];
+      )
+    ]);
 
-    const otherBidders = await Bid.find({
-      auction: auctionId,
-      bidder: { $ne: userId },
-    }).distinct("bidder");
-
-    otherBidders.forEach((bidderId) => {
-      notifications.push(
-        createNotification(
-          req,
-          bidderId,
-          `The auction "${auction.title}" was purchased by another user.`,
-          "SYSTEM",
-          null,
-          { model: "Auction", id: auctionId }
-        )
-      );
-    });
-
-    await Promise.all(notifications);
+    await session.commitTransaction();
 
     res.status(200).json({
       success: true,
-      auction: { 
-        id: auctionId, 
-        title: auction.title,
-        price: auction.buyNowPrice
-      },
+      paymentUrl: stripeSession.url,
+      orderId: order._id,
       message: "Auction purchased successfully"
     });
+
   } catch (error) {
-    next(new ApiError(error.message, 500));
+    await session.abortTransaction();
+    next(new ApiError(`Purchase failed: ${error.message}`, 500));
+  } finally {
+    session.endSession();
   }
 });
 
