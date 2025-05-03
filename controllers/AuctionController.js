@@ -12,8 +12,10 @@ const { createCheckoutSession } = require("./PaymentController");
 const auctionEmails = require("../extra/Emaildb");
 const mongoose = require("mongoose");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-
+const {createAuctionPending} = require("../services/auctionService");
+const { moderateAuctionAsync } = require("../services/auctionService");
 // Create a new auction
+
 const createAuction = asyncHandler(async (req, res) => {
   try {
     const {
@@ -58,7 +60,7 @@ const createAuction = asyncHandler(async (req, res) => {
       description: description || "",
       startPrice: Number(startPrice),
       currentPrice: Number(startPrice),
-      status: "active",
+      status: "pending",
       category, // Add the category field
     };
 
@@ -68,7 +70,7 @@ const createAuction = asyncHandler(async (req, res) => {
       auctionData.minimumBidIncrement = Number(minimumBidIncrement);
     if (endDate) auctionData.endDate = new Date(endDate);
 
-    // ✅ Get Cloudinary image URLs from req.cloudinaryFiles
+    // Get Cloudinary image URLs from req.cloudinaryFiles
     const uploaded = req.cloudinaryFiles || {};
 
     if (!uploaded.auctionCover || uploaded.auctionCover.length === 0) {
@@ -84,32 +86,36 @@ const createAuction = asyncHandler(async (req, res) => {
         ? uploaded.auctionImages
         : [uploaded.auctionCover[0]];
 
+    // Create auction and send response
     const auction = await Auction.create(auctionData);
 
     const populatedAuction = await Auction.findById(auction._id)
       .populate("seller", "username _id")
       .populate("category", "name");
 
-    // ✅ Notify admin
-    if (process.env.ADMIN_USER_ID) {
-      await createNotification(
-        req,
-        process.env.ADMIN_USER_ID,
-        `New auction "${auction.title}" has been created by seller ${
-          req.user.username || req.user.id
-        }`,
-        "SYSTEM",
-        null,
-        { model: "Auction", id: auction._id }
-      );
-    }
+    // Send auction to moderation in the background without blocking the request
+    // This is done asynchronously
+    moderateAuctionAsync(
+      auction._id,
+      auction.auctionCover, // Or any image URL you'd like to send
+      auction.description,
+      req.user // Pass the authenticated user
+    )
+      .then((updatedAuction) => {
+        console.log(`Auction ${updatedAuction.title} moderation completed.`);
+      })
+      .catch((error) => {
+        console.error(`Moderation failed for auction ${auction.title}:`, error);
+      });
 
-    res.status(201).json({ success: true, data: populatedAuction });
+    // Respond to the user with the created auction immediately
+    res.status(201).json({ success: true, message: "Auction awaiting approval",data: populatedAuction });
   } catch (error) {
     console.error("Error creating auction:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
 
 // Place a bid on an auction
 const placeBid = asyncHandler(async (req, res) => {

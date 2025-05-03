@@ -6,6 +6,7 @@ const authorize = require("../middlewares/AuthorizeMiddle");
 const authMiddleware = protect;
 const adminMiddleware = authorize('admin');
 const sellerMiddleware = authorize('seller', 'admin');
+const analyticsService = require('../services/analyticsService');
 
 const {
   getAdminDashboard,
