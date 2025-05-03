@@ -5,7 +5,7 @@ Todo:
 1. Socket for irl
 
 
-4. fix callback
+4. fix callback lol
 5. double check payment flow
 
 
