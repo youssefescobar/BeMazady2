@@ -3,8 +3,7 @@ Feel free to update / leave notes.
 Todo:
 
 1. Socket for irl
-2. cart check out doesnt work
-3. order routes needs edititng based on new order 
+2. add order filttering
 4. check everything
 
 

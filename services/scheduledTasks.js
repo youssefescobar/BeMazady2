@@ -7,6 +7,7 @@ const logger = require("../utils/logger");
 const mongoose = require("mongoose");
 const Order = require("../models/Order");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const auctionEmails = require("../extra/Emaildb");
 
 // Function to end expired auctions
 const endExpiredAuctions = async () => {
@@ -17,138 +18,244 @@ const endExpiredAuctions = async () => {
     noBids: 0,
     failed: 0
   };
+
   try {
     await session.withTransaction(async () => {
       const now = new Date();
 
-      // 1. Find expired auctions
       const expiredAuctions = await Auction.find({
         endDate: { $lte: now },
         status: "active"
       })
         .populate("seller")
-        .session(session);
+        .session(session)
+        .lean();
+
+      stats.totalProcessed = expiredAuctions.length;
       logger.info(`Processing ${stats.totalProcessed} expired auctions`);
 
       for (const auction of expiredAuctions) {
         try {
-          // 2. Find highest bid
           const highestBid = await Bid.findOne({ auction: auction._id })
             .sort({ amount: -1 })
             .populate("bidder")
             .session(session);
 
-          // 3. Update auction status
-          const updateData = { 
-            status: "completed",
-            updatedAt: now
+          const otherBids = highestBid
+            ? await Bid.find({
+                auction: auction._id,
+                bidder: { $ne: highestBid.bidder._id }
+              })
+                .populate("bidder")
+                .session(session)
+            : [];
+
+          const updateData = {
+            $set: {
+              status: "completed",
+              updatedAt: now
+            },
+            $inc: { __v: 1 }
           };
 
           if (highestBid) {
-            updateData.winningBidder = highestBid.bidder._id;
+            stats.withWinners++;
+            updateData.$set.winningBidder = highestBid.bidder._id;
 
-            // 4. Create order for winner
             const [order] = await Order.create([{
               user: highestBid.bidder._id,
-              items: [{
-                itemType: "auction",
-                item: auction._id,
-                quantity: 1,
-                priceAtPurchase: highestBid.amount,
-                seller: auction.seller._id
-              }],
+              items: [
+                {
+                  itemType: "auction",
+                  item: auction._id,
+                  quantity: 1,
+                  priceAtPurchase: highestBid.amount,
+                  seller: auction.seller._id,
+                  metadata: {
+                    auctionTitle: auction.title,
+                    auctionEnd: auction.endDate
+                  }
+                }
+              ],
               totalAmount: highestBid.amount,
               status: "pending",
               paymentSession: {
-                sessionId: "pending_auction_win",
-                paymentUrl: "",
-                expiresAt: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000) // 3 days to pay
-              }
+                sessionId: `pending_${auction._id}`,
+                paymentUrl: "about:blank", // placeholder initially
+                expiresAt: new Date(now.getTime() + 72 * 60 * 60 * 1000), // 72 hours
+                status: "awaiting_payment"
+              },
+              shippingRequired: auction.requiresShipping || false
             }], { session });
 
-            // 5. Create payment link
-            const stripeSession = await stripe.checkout.sessions.create({
-              payment_method_types: ["card"],
-              line_items: [{
-                price_data: {
-                  currency: "usd",
-                  product_data: {
-                    name: `Won Auction: ${auction.title}`,
-                    description: auction.description.substring(0, 100),
-                    metadata: { auctionId: auction._id.toString() }
-                  },
-                  unit_amount: Math.round(highestBid.amount * 100),
+            const idempotencyKey = `auction_${auction._id}_${highestBid.bidder._id}_${Date.now()}`;
+
+            try {
+              const stripeSession = await stripe.checkout.sessions.create({
+                payment_method_types: ["card"],
+                line_items: [
+                  {
+                    price_data: {
+                      currency: "usd",
+                      product_data: {
+                        name: `Won Auction: ${auction.title}`,
+                        description: `Auction ended ${auction.endDate.toLocaleDateString()}`,
+                        images: [auction.auctionCover],
+                        metadata: {
+                          auctionId: auction._id.toString(),
+                          winningBidId: highestBid._id.toString()
+                        }
+                      },
+                      unit_amount: Math.round(highestBid.amount * 100)
+                    },
+                    quantity: 1
+                  }
+                ],
+                mode: "payment",
+                success_url: `${process.env.FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}&order_id=${order._id}&source=auction`,
+                cancel_url: `${process.env.FRONTEND_URL}/payment/cancel?order_id=${order._id}&source=auction`,
+                customer_email: highestBid.bidder.email,
+                client_reference_id: order._id.toString(),
+                metadata: {
+                  orderId: order._id.toString(),
+                  auctionId: auction._id.toString(),
+                  type: "auction_win"
                 },
-                quantity: 1,
-              }],
-              mode: "payment",
-              success_url: `${process.env.FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}&order_id=${order._id}`,
-              cancel_url: `${process.env.FRONTEND_URL}/payment/cancel?order_id=${order._id}`,
-              customer_email: highestBid.bidder.email,
-              metadata: { orderId: order._id.toString() },
-              expires_at: Math.floor(Date.now() / 1000) + 259200 // 3 days
-            });
+                expires_at: Math.floor(now.getTime() / 1000) + 86400, // 24 hours
 
-            // 6. Update order with payment link
-            order.paymentSession = {
-              sessionId: stripeSession.id,
-              paymentUrl: stripeSession.url,
-              expiresAt: new Date(stripeSession.expires_at * 1000),
-              status: "pending"
-            };
-            await order.save({ session });
+                payment_intent_data: {
+                  capture_method: "manual",
+                  metadata: {
+                    auction_id: auction._id.toString()
+                  }
+                }
+              }, { idempotencyKey });
 
-            // 7. Notify winner with payment link
-            await createNotification(
-              { app: global.app },
-              highestBid.bidder._id,
-              `You won "${auction.title}" for $${highestBid.amount}. Pay now: ${stripeSession.url}`,
-              "SYSTEM",
-              null,
-              { model: "Order", id: order._id }
-            );
+              await Order.updateOne(
+                { _id: order._id },
+                {
+                  $set: {
+                    "paymentSession.sessionId": stripeSession.id,
+                    "paymentSession.paymentUrl": stripeSession.url,
+                    "paymentSession.expiresAt": new Date(stripeSession.expires_at * 1000),
+                    updatedAt: now
+                  }
+                },
+                { session }
+              );
+
+              // Refresh the order after update to get the correct payment URL
+              const updatedOrder = await Order.findById(order._id).session(session);
+
+              await Promise.all([
+                auctionEmails.notifyWinner(highestBid.bidder.email, auction, updatedOrder),
+                auctionEmails.notifySeller(auction.seller.email, auction, updatedOrder),
+                ...otherBids.map(bid =>
+                  auctionEmails.notifyOutbid(bid.bidder.email, auction)
+                ),
+                createNotification(
+                  { app: global.app },
+                  highestBid.bidder._id,
+                  `You won "${auction.title}" for ${highestBid.amount}`,
+                  "SYSTEM",
+                  null,
+                  { model: "Order", id: updatedOrder._id }
+                ),
+                createNotification(
+                  { app: global.app },
+                  auction.seller._id,
+                  `Auction sold: ${auction.title} for ${highestBid.amount}`,
+                  "SYSTEM",
+                  highestBid.bidder._id,
+                  { model: "Auction", id: auction._id }
+                )
+              ]);
+            } catch (stripeError) {
+              logger.error(`Stripe session creation failed: ${stripeError.message}`, {
+                auctionId: auction._id
+              });
+              
+              // Still proceed with notifications but inform about payment issue
+              await Promise.all([
+                auctionEmails.notifyWinner(
+                  highestBid.bidder.email, 
+                  auction, 
+                  { 
+                    ...order.toObject(), 
+                    paymentIssue: true 
+                  }
+                ),
+                auctionEmails.notifySeller(
+                  auction.seller.email, 
+                  auction, 
+                  { 
+                    ...order.toObject(), 
+                    paymentIssue: true 
+                  }
+                ),
+                createNotification(
+                  { app: global.app },
+                  highestBid.bidder._id,
+                  `You won "${auction.title}" for ${highestBid.amount}. There was an issue with payment processing. Our team will contact you.`,
+                  "SYSTEM",
+                  null,
+                  { model: "Order", id: order._id }
+                ),
+              ]);
+              
+              // Throw the error to be caught by the outer try/catch
+              throw stripeError;
+            }
+          } else {
+            stats.noBids++;
+
+            await Promise.all([
+              auctionEmails.notifyUnsuccessfulAuction(auction.seller.email, auction),
+              createNotification(
+                { app: global.app },
+                auction.seller._id,
+                `Auction ended with no bids: ${auction.title}`,
+                "SYSTEM",
+                null,
+                { model: "Auction", id: auction._id }
+              )
+            ]);
           }
 
-          // 8. Update auction status
           await Auction.updateOne(
             { _id: auction._id },
             updateData,
             { session }
           );
-
-          // 9. Notify seller
-          const notificationMsg = highestBid
-            ? `Your auction "${auction.title}" sold for $${highestBid.amount}`
-            : `Your auction "${auction.title}" ended with no bids`;
-          
-          await createNotification(
-            { app: global.app },
-            auction.seller._id,
-            notificationMsg,
-            "SYSTEM",
-            null,
-            { model: "Auction", id: auction._id }
-          );
-
         } catch (auctionError) {
-          logger.error(`Failed processing auction ${auction._id}:`, auctionError);
-          continue; // Process next auction even if one fails
+          stats.failed++;
+          logger.error(`Auction ${auction._id} processing failed: ${auctionError.message || auctionError}`, {
+            auctionId: auction._id
+          });
         }
       }
+
+      logger.info("Auction processing completed", { stats });
     });
   } catch (error) {
-    logger.error(`Transaction failed:`, error);
+    logger.error("Transaction failed", {
+      error: error.message || error,
+      sessionId: session.id
+    });
+    throw error;
   } finally {
-    session.endSession();
+    await session.endSession();
   }
+
+  return stats;
 };
 
 // Schedule tasks
 const initScheduledTasks = (app) => {
   global.app = app;
 
-  // Run every minute (changed from comment saying every 5 minutes but code was every 1 minute)
-  cron.schedule("*/10 * * * *", () => {
+  // Run every minute
+  cron.schedule("*/5 * * * *", () => {
     logger.info("Running scheduled task: endExpiredAuctions");
     endExpiredAuctions();
   });
