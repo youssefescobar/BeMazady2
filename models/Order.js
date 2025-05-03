@@ -1,79 +1,35 @@
-const mongoose = require("mongoose")
+// models/Order.js
+const mongoose = require("mongoose");
 
-const orderItemSchema = new mongoose.Schema({
-  product: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Item",
-    required: true,
-  },
-  quantity: {
-    type: Number,
-    required: true,
-    min: 1,
-  },
-  price: {
-    type: Number,
-    required: true,
-  },
-  // For auction items
-  isAuctionItem: {
-    type: Boolean,
-    default: false,
-  },
-  auctionId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Auction",
-  },
-})
+const OrderItemSchema = new mongoose.Schema({
+  itemType: { type: String, enum: ["auction", "item"], required: true },
+  item: { type: mongoose.Schema.Types.ObjectId, required: true }, // Can be Auction or Item
+  quantity: { type: Number, default: 1 },
+  priceAtPurchase: { type: Number, required: true },
+  seller: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+});
 
-const orderSchema = new mongoose.Schema(
+const PaymentSessionSchema = new mongoose.Schema({
+  sessionId: { type: String, required: true },
+  paymentUrl: { type: String, required: true },
+  expiresAt: { type: Date, required: true },
+});
+
+const OrderSchema = new mongoose.Schema(
   {
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    items: [orderItemSchema],
-    totalAmount: {
-      type: Number,
-      required: true,
-    },
-    shippingAddress: {
-      street: String,
-      city: String,
-      state: String,
-      postalCode: String,
-      country: String,
-      phoneNumber: String,
-    },
-    paymentMethod: {
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    items: [OrderItemSchema],
+    totalAmount: { type: Number, required: true },
+    status: {
       type: String,
-      required: true,
-      enum: ["card", "vodafone-cash", "orange-money", "etisalat-cash", "we-pay", "fawry", "meeza", "cod"],
-    },
-    paymentStatus: {
-      type: String,
-      enum: ["pending", "paid", "failed", "refunded"],
+      enum: ["pending", "paid", "shipped", "delivered", "cancelled"],
       default: "pending",
     },
-    orderStatus: {
-      type: String,
-      enum: ["pending", "processing", "shipped", "delivered", "cancelled"],
-      default: "pending",
-    },
-    transaction: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Transaction",
-    },
-    trackingNumber: String,
-    notes: String,
+    paymentMethod: { type: String, default: "stripe" },
+    paymentSession: PaymentSessionSchema,
+    shippingAddress: { type: mongoose.Schema.Types.Mixed }, // Can be structured later
   },
-  { timestamps: true },
-)
+  { timestamps: true }
+);
 
-// Add index for faster queries
-orderSchema.index({ user: 1, createdAt: -1 })
-orderSchema.index({ orderStatus: 1 })
-orderSchema.index({ paymentStatus: 1 })
-
-module.exports = mongoose.model("Order", orderSchema)
+module.exports = mongoose.model("Order", OrderSchema);

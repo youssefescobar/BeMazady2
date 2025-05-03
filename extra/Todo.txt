@@ -3,7 +3,11 @@ Feel free to update / leave notes.
 Todo:
 
 1. Socket for irl
-2. Ai (recommendation , img , nlp)
+2. add order filttering
+3. add email + noties for buy now and checkout based on emaildb template
+4. fix callback
+5. double check payment flow
+6. check everything lol
 
 
 6. user interaction model for recommendation system (fl a5er)

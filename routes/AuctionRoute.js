@@ -7,6 +7,7 @@ const asyncHandler = require("express-async-handler");
 const {
   createAuction,
   placeBid,
+  buyNowAuction,
   getAuction,
   getAllAuctions,
   endAuction,
@@ -37,6 +38,7 @@ router.post(
 
 // 🟢 Protected: Only logged-in users can place bids
 router.post("/:id/bid", protect, PlaceBidValidator, placeBid);
+router.post("/:id/buy-now", protect, buyNowAuction);
 
 // 🟢 Protected: Only auction owners or admins can update an auction (With Image Upload)
 router.put(
@@ -58,9 +60,14 @@ router.post(
 );
 router.delete("/:id", protect, deleteAuction);
 
-router.post('/process-expired', asyncHandler(async (req, res) => {
-  const { endExpiredAuctions } = require('../services/scheduledTasks');
-  await endExpiredAuctions();
-  res.status(200).json({ message: 'Expired auctions processed successfully' });
-}));
+router.post(
+  "/process-expired",
+  asyncHandler(async (req, res) => {
+    const { endExpiredAuctions } = require("../services/scheduledTasks");
+    await endExpiredAuctions();
+    res
+      .status(200)
+      .json({ message: "Expired auctions processed successfully" });
+  })
+);
 module.exports = router;

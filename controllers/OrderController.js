@@ -1,178 +1,154 @@
-const Order = require("../models/Order")
-const Transaction = require("../models/Transactions")
-const ApiError = require("../utils/ApiError")
-const asyncHandler = require("express-async-handler")
+const asyncHandler = require("express-async-handler");
+const Order = require("../models/Order");
+const ApiError = require("../utils/ApiError");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
-exports.getUserOrders = asyncHandler(async (req, res) => {
+// @desc    Create new order
+// @route   POST /api/orders
+// @access  Private
+const createOrder = asyncHandler(async (req, res, next) => {
+  const { items, totalAmount, shippingAddress } = req.body;
+
+  // Validation
+  if (!items || !totalAmount) {
+    return next(new ApiError("Items and total amount are required", 400));
+  }
+
+  const order = await Order.create({
+    user: req.userId,
+    items: items.map(item => ({
+      ...item,
+      priceAtPurchase: item.priceAtPurchase || item.price // Fallback
+    })),
+    totalAmount,
+    shippingAddress,
+    status: "pending"
+  });
+
+  res.status(201).json({
+    success: true,
+    data: order
+  });
+});
+
+// @desc    Get order by ID
+// @route   GET /api/orders/:id
+// @access  Private (Owner/Admin)
+const getOrder = asyncHandler(async (req, res, next) => {
+  const order = await Order.findById(req.params.id)
+    .populate("user", "name email")
+    .populate("items.item", "name price");
+
+  if (!order) {
+    return next(new ApiError("Order not found", 404));
+  }
+
+  // Authorization - owner or admin
+  if (order.user._id.toString() !== req.userId.toString() && req.user.role !== "admin") {
+    return next(new ApiError("Not authorized to view this order", 403));
+  }
+
+  res.status(200).json({
+    success: true,
+    data: order
+  });
+});
+
+// @desc    Update order status
+// @route   PUT /api/orders/:id/status
+// @access  Private (Admin)
+const updateOrderStatus = asyncHandler(async (req, res, next) => {
+  const { status } = req.body;
+  const validStatuses = ["pending", "paid", "shipped", "delivered", "cancelled"];
+
+  if (!validStatuses.includes(status)) {
+    return next(new ApiError("Invalid status", 400));
+  }
+
+  const order = await Order.findById(req.params.id);
+  if (!order) return next(new ApiError("Order not found", 404));
+
+  // Business logic checks
+  if (status === "paid" && order.status !== "pending") {
+    return next(new ApiError("Only pending orders can be marked as paid", 400));
+  }
+
+  order.status = status;
+  await order.save();
+
+  // TODO: Add notifications here
+
+  res.status(200).json({
+    success: true,
+    data: order
+  });
+});
+
+// @desc    Get user's orders
+// @route   GET /api/orders/my-orders
+// @access  Private
+const getMyOrders = asyncHandler(async (req, res, next) => {
+  const orders = await Order.find({ user: req.userId })
+    .sort("-createdAt")
+    .populate("items.item", "name price image");
+
+  res.status(200).json({
+    success: true,
+    count: orders.length,
+    data: orders
+  });
+});
+
+// @desc    Get all orders (Admin)
+// @route   GET /api/orders
+// @access  Private/Admin
+const getAllOrders = asyncHandler(async (req, res, next) => {
+  const orders = await Order.find()
+    .populate("user", "name email")
+    .sort("-createdAt");
+
+  res.status(200).json({
+    success: true,
+    count: orders.length,
+    data: orders
+  });
+});
+
+// @desc    Process refund
+// @route   POST /api/orders/:id/refund
+// @access  Private/Admin
+const processRefund = asyncHandler(async (req, res, next) => {
+  const order = await Order.findById(req.params.id);
+  if (!order) return next(new ApiError("Order not found", 404));
+
+  if (order.status !== "paid") {
+    return next(new ApiError("Only paid orders can be refunded", 400));
+  }
+
+  // Create Stripe refund
   try {
-    const userId = req.userId;
-    console.log("Getting orders for user:", userId);
+    const refund = await stripe.refunds.create({
+      payment_intent: order.paymentIntentId,
+      reason: "requested_by_customer"
+    });
 
-    const orders = await Order.find({ user: userId })
-      .sort("-createdAt")
-      .populate({
-        path: "items.product",
-        select: "name images price",
-      })
-      .populate({
-        path: "transaction",
-        select: "status gatewayTransactionId completedAt" // Only include necessary fields
-      });
-
-    console.log("Orders found:", orders.length);
-    if (orders.length > 0) {
-      console.log("Sample order:", {
-        _id: orders[0]._id,
-        status: orders[0].paymentStatus,
-        itemsCount: orders[0].items.length
-      });
-    }
+    order.status = "refunded";
+    await order.save();
 
     res.status(200).json({
-      status: "success",
-      results: orders.length,
-      data: orders,
+      success: true,
+      data: { order, refund }
     });
-  } catch (error) {
-    console.error("Error fetching user orders:", error);
-    res.status(500).json({
-      status: "error",
-      message: "Failed to fetch orders",
-      error: error.message,
-    });
+  } catch (err) {
+    return next(new ApiError("Refund failed: " + err.message, 500));
   }
 });
 
-// Get specific order
-exports.getOrder = asyncHandler(async (req, res, next) => {
-  const userId = req.userId
-
-  const order = await Order.findOne({
-    _id: req.params.id,
-    user: userId,
-  })
-    .populate("items.product")
-    .populate("transaction")
-
-  if (!order) {
-    return next(new ApiError("Order not found", 404))
-  }
-
-  res.status(200).json({
-    status: "success",
-    data: order,
-  })
-})
-
-// Cancel order
-exports.cancelOrder = asyncHandler(async (req, res, next) => {
-  const userId = req.userId
-
-  const order = await Order.findOne({
-    _id: req.params.id,
-    user: userId,
-  })
-
-  if (!order) {
-    return next(new ApiError("Order not found", 404))
-  }
-
-  // Check if order can be cancelled
-  if (!["pending", "processing"].includes(order.orderStatus)) {
-    return next(new ApiError("Cannot cancel order at current status", 400))
-  }
-
-  // Update order status
-  order.orderStatus = "cancelled"
-  await order.save()
-
-  // If payment was made, create refund transaction
-  if (order.paymentStatus === "paid") {
-    await Transaction.create({
-      buyer: userId,
-      amount: order.totalAmount,
-      transactionType: "purchase",
-      paymentMethod: "refund",
-      status: "completed",
-      relatedOrder: order._id,
-    })
-
-    // Update payment status
-    order.paymentStatus = "refunded"
-    await order.save()
-  }
-
-  res.status(200).json({
-    status: "success",
-    data: order,
-  })
-})
-
-// Admin: Get all orders
-exports.getAllOrders = asyncHandler(async (req, res) => {
-  const page = req.query.page * 1 || 1
-  const limit = req.query.limit * 1 || 10
-  const skip = (page - 1) * limit
-
-  // Build filter object
-  const filterObj = {}
-  if (req.query.orderStatus) filterObj.orderStatus = req.query.orderStatus
-  if (req.query.paymentStatus) filterObj.paymentStatus = req.query.paymentStatus
-  if (req.query.paymentMethod) filterObj.paymentMethod = req.query.paymentMethod
-
-  const orders = await Order.find(filterObj)
-    .skip(skip)
-    .limit(limit)
-    .sort("-createdAt")
-    .populate("user", "name email phone")
-    .populate("items.product", "name images price")
-    .populate("transaction")
-
-  const totalOrders = await Order.countDocuments(filterObj)
-
-  res.status(200).json({
-    status: "success",
-    results: orders.length,
-    paginationResult: {
-      currentPage: page,
-      totalPages: Math.ceil(totalOrders / limit),
-      limit,
-      totalOrders,
-    },
-    data: orders,
-  })
-})
-
-// Admin: Update order status
-exports.updateOrderStatus = asyncHandler(async (req, res, next) => {
-  const { orderStatus } = req.body
-
-  if (!orderStatus) {
-    return next(new ApiError("Order status is required", 400))
-  }
-
-  const order = await Order.findByIdAndUpdate(req.params.id, { orderStatus }, { new: true, runValidators: true })
-    .populate("user", "name email phone")
-    .populate("items.product", "name images price")
-    .populate("transaction")
-
-  if (!order) {
-    return next(new ApiError("Order not found", 404))
-  }
-
-  // If order is delivered and payment method is COD, update payment status
-  if (orderStatus === "delivered" && order.paymentMethod === "cod") {
-    order.paymentStatus = "paid"
-    await order.save()
-
-    // Update transaction status
-    if (order.transaction) {
-      await Transaction.findByIdAndUpdate(order.transaction, { status: "completed" })
-    }
-  }
-
-  res.status(200).json({
-    status: "success",
-    data: order,
-  })
-})
+module.exports = {
+  createOrder,
+  getOrder,
+  updateOrderStatus,
+  getMyOrders,
+  getAllOrders,
+  processRefund
+};

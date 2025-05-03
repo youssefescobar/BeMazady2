@@ -2,7 +2,7 @@ const express = require("express");
 const dotenv = require("dotenv").config();
 const morgan = require("morgan");
 const http = require("http"); // For Socket.IO
-const jwt = require("jsonwebtoken"); 
+const jwt = require("jsonwebtoken");
 const socketIo = require("socket.io");
 const mongoose = require("mongoose");
 
@@ -10,7 +10,7 @@ const compression = require("compression"); // Compression middleware
 const rateLimit = require("express-rate-limit"); // Rate limiting middleware
 const helmet = require("helmet"); // Helmet middleware
 
-const { initScheduledTasks } = require('./services/scheduledTasks');
+const { initScheduledTasks } = require("./services/scheduledTasks");
 const notificationRoutes = require("./routes/NotificationRoutes");
 const messageRoutes = require("./routes/MessageRoutes");
 const globalhandel = require("./middlewares/ErrorMiddle");
@@ -24,12 +24,12 @@ const AuctionRoute = require("./routes/AuctionRoute");
 const UserRoute = require("./routes/UserRoute");
 const recommendationRoutes = require("./routes/RecommendRoute");
 const CartRoutes = require("./routes/CartRoute");
-const analyticsRoutes = require('./routes/AnalyticsRoutes');
+const paymentRoutes = require("./routes/paymentRoutes");
+const OrderRoutes = require("./routes/OrderRoutes");
+// const OrderRoute = require("./routes/OrderRoute");
+// const analyticsRoutes = require("./routes/AnalyticsRoutes");
 
-const paymentRoutes = require('./routes/PaymentRoute');
-const orderRoutes = require('./routes/OrderRoute');
-
-const ReverseAuctionRoute = require("./routes/ReverseAuctionRoute");
+const ReverseAuctionRoute = require("./routes/ReverseAuctionRoute"); // Add this line
 
 // Initialize Express app
 const app = express();
@@ -40,28 +40,23 @@ const io = socketIo(server);
 dbConnect();
 
 // Middleware
-app.use(compression());
-// app.use(helmet());  
 
-// Rate limiting
+app.use(compression());
+// app.use(helmet());
+
 // const limiter = rateLimit({
 //   windowMs: 15 * 60 * 1000, // 15 minutes
 //   max: 100, // Max 100 requests per IP
 //   message: "Too many requests from this IP, please try again later."
 // });
 // app.use(limiter);
-
-// Important: Stripe webhook needs raw body, so we need to use the raw parser for /api/payments/webhook
-app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
-
-// Standard body parsers for other routes
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true })); // Add this line to handle URL-encoded data
 
 app.use(morgan("dev"));
 
 app.use((err, req, res, next) => {
-  console.error('Server Error:', err.message);
+  console.error("Server Error:", err.message);
 
   // Optional: if you want to differentiate custom errors
   const statusCode = err.statusCode || 500;
@@ -69,7 +64,7 @@ app.use((err, req, res, next) => {
   res.status(statusCode).json({
     status: "error",
     message: err.message || "Internal Server Error",
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+    stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
   });
 });
 
@@ -84,15 +79,15 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/users", UserRoute);
 app.use("/api/recommendations", recommendationRoutes);
-app.use('/api/analytics', analyticsRoutes);
+app.use("/api/payment", paymentRoutes);
+app.use("/api/orders", OrderRoutes);
+// app.use('/api/analytics', analyticsRoutes);
 app.use("/api/reverseauctions", ReverseAuctionRoute);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/orders', orderRoutes); 
+// app.use("/api/orders", OrderRoute);
 
-app.get('/', (req, res) => {
-  res.send('Api is running ya tohamy');
-})
-
+app.get("/", (req, res) => {
+  res.send("Api is running ya tohamy");
+});
 // Handle route errors - ONLY ONE catch-all handler
 app.all("*", (req, res, next) => {
   next(new ApiError(`Can't find this route: ${req.originalUrl}`, 400));
@@ -152,5 +147,5 @@ server.listen(PORT, () => {
   setTimeout(() => {
     initScheduledTasks(app);
     console.log("Scheduled tasks initialized");
-  }, 3000)
-});
+  }, 3000);
+}); 

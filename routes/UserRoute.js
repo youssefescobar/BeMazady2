@@ -31,6 +31,8 @@ router.get(
   userController.getLoggedUser,
   userController.getUserById
 );
+
+router.get("/won-auctions", protect, userController.getWonAuctions);
 // User & Admin: Get user by ID (users can only see their own info)
 router.get("/:id", protect, GetUserByIdValidator, userController.getUserById);
 

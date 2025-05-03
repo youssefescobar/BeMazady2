@@ -1,109 +1,200 @@
-const asyncHandler = require("express-async-handler")
-const Cart = require("../models/Cart")
-const Item = require("../models/Item")
-const ApiError = require("../utils/ApiError")
+const asyncHandler = require("express-async-handler");
+const Cart = require("../models/Cart");
+const Item = require("../models/Item");
+const ApiError = require("../utils/ApiError");
+const Order = require("../models/Order");
+const { createCheckoutSession } = require("./PaymentController");
+const mongoose = require("mongoose");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 // Get User Cart - Private
 const GetCart = asyncHandler(async (req, res, next) => {
-  let cart = await Cart.findOne({ user: req.userId }).populate("items.item")
+  let cart = await Cart.findOne({ user: req.userId }).populate("items.item");
 
   if (!cart) {
-    cart = new Cart({ user: req.userId, items: [], totalPrice: 0 })
+    cart = new Cart({ user: req.userId, items: [], totalPrice: 0 });
   }
 
-  res.status(200).json({ status: "success", data: cart })
-})
+  res.status(200).json({ status: "success", data: cart });
+});
 
 // Add Item to Cart - Private
 const AddToCart = asyncHandler(async (req, res, next) => {
-  const { itemId, quantity } = req.body
+  const { itemId, quantity } = req.body;
 
-  let cart = await Cart.findOne({ user: req.userId })
+  let cart = await Cart.findOne({ user: req.userId });
 
   if (!cart) {
-    cart = new Cart({ user: req.userId, items: [], totalPrice: 0 })
+    cart = new Cart({ user: req.userId, items: [], totalPrice: 0 });
   }
 
-  const item = await Item.findById(itemId)
-  if (!item) return next(new ApiError("Item not found", 404))
+  const item = await Item.findById(itemId);
+  if (!item) return next(new ApiError("Item not found", 404));
   if (item.item_status !== "available") {
-    return next(new ApiError("This item is not available for purchase", 400))
+    return next(new ApiError("This item is not available for purchase", 400));
   }
 
-  const itemIndex = cart.items.findIndex((cartItem) => cartItem.item.equals(itemId))
+  const itemIndex = cart.items.findIndex((cartItem) =>
+    cartItem.item.equals(itemId)
+  );
 
   if (itemIndex > -1) {
-    cart.items[itemIndex].quantity += quantity
+    cart.items[itemIndex].quantity += quantity;
   } else {
-    cart.items.push({ item: itemId, quantity })
+    cart.items.push({ item: itemId, quantity });
   }
 
-  cart.totalPrice = cart.items.reduce((total, cartItem) => total + cartItem.quantity * item.price, 0)
+  cart.totalPrice = cart.items.reduce(
+    (total, cartItem) => total + cartItem.quantity * item.price,
+    0
+  );
 
-  await cart.save()
-  res.status(200).json({ status: "success", data: cart })
-})
+  await cart.save();
+  res.status(200).json({ status: "success", data: cart });
+});
 
 // Remove Item from Cart - Private
 const RemoveFromCart = asyncHandler(async (req, res, next) => {
-  const { itemId } = req.body
-  const cart = await Cart.findOne({ user: req.userId })
+  const { itemId } = req.body;
+  const cart = await Cart.findOne({ user: req.userId });
 
-  if (!cart) return next(new ApiError("Cart not found", 404))
+  if (!cart) return next(new ApiError("Cart not found", 404));
 
-  cart.items = cart.items.filter((cartItem) => !cartItem.item.equals(itemId))
+  cart.items = cart.items.filter((cartItem) => !cartItem.item.equals(itemId));
 
-  cart.totalPrice = cart.items.reduce((total, cartItem) => total + cartItem.quantity * cartItem.item.price, 0)
+  cart.totalPrice = cart.items.reduce(
+    (total, cartItem) => total + cartItem.quantity * cartItem.item.price,
+    0
+  );
 
-  await cart.save()
-  res.status(200).json({ status: "success", data: cart })
-})
+  await cart.save();
+  res.status(200).json({ status: "success", data: cart });
+});
 
 // Clear Cart - Private
 const ClearCart = asyncHandler(async (req, res, next) => {
-  await Cart.findOneAndDelete({ user: req.userId })
-  res.status(204).json({ message: "Cart cleared successfully" })
-})
+  await Cart.findOneAndDelete({ user: req.userId });
+  res.status(204).json({ message: "Cart cleared successfully" });
+});
 
 // Prepare Cart for Checkout - Private
-const PrepareCheckout = asyncHandler(async (req, res, next) => {
-  const cart = await Cart.findOne({ user: req.userId }).populate({
-    path: "items.item",
-    select: "name price images description seller",
-  });
+const checkoutCart = asyncHandler(async (req, res, next) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
-  if (!cart || cart.items.length === 0) {
-    return next(new ApiError("Cart is empty", 400));
-  }
+  try {
+    // 1. Load and validate cart
+    const cart = await Cart.findOne({ user: req.userId })
+      .populate({
+        path: "items.item",
+        select: "price owner item_status",
+        populate: { path: "owner", select: "_id" }
+      })
+      .session(session);
 
-  // Calculate final prices and prepare checkout data
-  const checkoutData = {
-    items: cart.items.map((item) => ({
-      id: item.item._id,
-      name: item.item.name,
-      price: item.item.price,
-      quantity: item.quantity,
-      subtotal: item.item.price * item.quantity,
-      seller: item.item.seller,
-    })),
-    totalPrice: cart.totalPrice,
-    itemCount: cart.items.length,
-    totalItems: cart.items.reduce((total, item) => total + item.quantity, 0),
-  };
-
-  // Generate a checkoutId if you want to track this checkout session
-  const checkoutId = require('crypto').randomUUID();
-  
-  // You could store this in the session or a temporary database collection
-  // await CheckoutSession.create({ _id: checkoutId, userId: req.userId, ...checkoutData });
-  
-  res.status(200).json({ 
-    status: "success", 
-    data: {
-      ...checkoutData,
-      checkoutId 
+    if (!cart || !cart.items?.length) {
+      await session.abortTransaction();
+      return next(new ApiError("Your cart is empty", 400));
     }
-  });
+
+    // 2. Validate all items are available
+    const unavailableItems = cart.items.filter(
+      item => !item.item || item.item.item_status !== "available"
+    );
+    
+    if (unavailableItems.length > 0) {
+      await session.abortTransaction();
+      return next(new ApiError(
+        `${unavailableItems.length} items are no longer available`, 
+        400
+      ));
+    }
+
+    // 3. Prepare order data
+    const orderItems = cart.items.map(item => ({
+      itemType: "item",
+      item: item.item._id,
+      quantity: item.quantity,
+      priceAtPurchase: item.item.price,
+      seller: item.item.owner._id
+    }));
+
+    const totalAmount = cart.items.reduce(
+      (total, item) => total + item.quantity * item.item.price,
+      0
+    );
+
+    // 4. Create order with temporary payment session
+    const [order] = await Order.create([{
+      user: req.userId,
+      items: orderItems,
+      totalAmount,
+      status: "pending",
+      paymentSession: {
+        sessionId: "temp_" + Date.now(),
+        paymentUrl: "https://example.com/pending",
+        expiresAt: new Date(Date.now() + 3600000)
+      }
+    }], { session });
+
+    if (!order) {
+      await session.abortTransaction();
+      return next(new ApiError("Order creation failed", 500));
+    }
+
+    // 5. Create Stripe checkout session
+    const stripeSession = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: orderItems.map(item => ({
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: `Item ${item.item.toString().slice(-4)}`,
+            metadata: { itemId: item.item.toString() }
+          },
+          unit_amount: Math.round(item.priceAtPurchase * 100),
+        },
+        quantity: item.quantity,
+      })),
+      mode: "payment",
+      success_url: `${process.env.FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}&order_id=${order._id}`,
+      cancel_url: `${process.env.FRONTEND_URL}/payment/cancel?order_id=${order._id}`,
+      customer_email: req.user.email,
+      metadata: { orderId: order._id.toString() },
+      expires_at: Math.floor(Date.now() / 1000) + 3600
+    });
+
+    // 6. Update order with real payment details
+    order.paymentSession = {
+      sessionId: stripeSession.id,
+      paymentUrl: stripeSession.url,
+      expiresAt: new Date(stripeSession.expires_at * 1000)
+    };
+    await order.save({ session });
+
+    // 7. Clear cart
+    cart.items = [];
+    cart.totalPrice = 0;
+    await cart.save({ session });
+
+    await session.commitTransaction();
+
+    res.json({
+      success: true,
+      paymentUrl: stripeSession.url,
+      orderId: order._id,
+      expiresAt: order.paymentSession.expiresAt
+    });
+
+  } catch (error) {
+    await session.abortTransaction();
+    next(new ApiError(
+      `Checkout failed: ${error.message}`,
+      error.statusCode || 500
+    ));
+  } finally {
+    session.endSession();
+  }
 });
 
 module.exports = {
@@ -111,5 +202,5 @@ module.exports = {
   AddToCart,
   RemoveFromCart,
   ClearCart,
-  PrepareCheckout, // Make sure this is exported
-}
+  checkoutCart,
+};
