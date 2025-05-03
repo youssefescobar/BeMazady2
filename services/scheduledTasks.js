@@ -112,8 +112,8 @@ const endExpiredAuctions = async () => {
                   }
                 ],
                 mode: "payment",
-                success_url: `${process.env.FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}&order_id=${order._id}&source=auction`,
-                cancel_url: `${process.env.FRONTEND_URL}/payment/cancel?order_id=${order._id}&source=auction`,
+                success_url: `${process.env.FRONTEND_URL}/payment/success`,
+                cancel_url: `${process.env.FRONTEND_URL}/payment/cancel`,
                 customer_email: highestBid.bidder.email,
                 client_reference_id: order._id.toString(),
                 metadata: {

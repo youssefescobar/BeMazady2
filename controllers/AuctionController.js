@@ -255,8 +255,8 @@ const buyNowAuction = asyncHandler(async (req, res, next) => {
         quantity: 1,
       }],
       mode: "payment",
-      success_url: `${process.env.FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}&order_id=${order._id}`,
-      cancel_url: `${process.env.FRONTEND_URL}/payment/cancel?order_id=${order._id}`,
+      success_url: `${process.env.FRONTEND_URL}/payment/success`,
+      cancel_url: `${process.env.FRONTEND_URL}/payment/cancel`,
       customer_email: userEmail,
       metadata: { orderId: order._id.toString() },
       expires_at: Math.floor(Date.now() / 1000) + 3600 // 1 hour

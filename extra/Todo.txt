@@ -4,15 +4,13 @@ Todo:
 
 1. Socket for irl
 
+
 4. fix callback
 5. double check payment flow
 
+
 6. check everything lol
-
-
 6. user interaction model for recommendation system (fl a5er)
-
-
 
 not important:
 1. coupouns
