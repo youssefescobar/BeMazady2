@@ -1,487 +1,203 @@
-const axios = require("axios")
-const ApiError = require("../utils/ApiError") // Assuming ApiError is in utils
-const asyncHandler = require("express-async-handler") // Import asyncHandler
-const Cart = require("../models/Cart")
-const Transaction = require("../models/Transactions") // Changed from Transactions to Transaction
-const Order = require("../models/Order")
-const User = require("../models/User")
-const { retryWithBackoff } = require("../utils/retry")
-const { PAYMOB_INTEGRATION_ID, PAYMOB_API_KEY, PAYMOB_IFRAME_ID, PAYMOB_HMAC_SECRET, FRONTEND_URL } = process.env // Access environment variables
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: '2023-08-16',
+  timeout: 10000, // 10 seconds
+  maxNetworkRetries: 2,
+  telemetry: false,
+  typescript: true
+});
 
-
-// Get PayMob authentication token
-const getAuthToken = async () => {
-    return retryWithBackoff(async () => {
-      try {
-        // Log the API key (partially masked for security)
-        const apiKeyLength = PAYMOB_API_KEY ? PAYMOB_API_KEY.length : 0
-        const maskedKey =
-          apiKeyLength > 8
-            ? `${PAYMOB_API_KEY.substring(0, 4)}...${PAYMOB_API_KEY.substring(apiKeyLength - 4)}`
-            : "Invalid or missing API key"
-  
-        console.log("Attempting to get auth token with API key:", maskedKey)
-  
-        // Validate API key before making the request
-        if (!PAYMOB_API_KEY || PAYMOB_API_KEY.trim() === "") {
-          throw new Error("PayMob API key is missing or empty")
-        }
-  
-        // Make the authentication request with proper error handling
-        const response = await axios.post(
-          "https://accept.paymob.com/api/auth/tokens",
-          { api_key: PAYMOB_API_KEY },
-          {
-            headers: { "Content-Type": "application/json" },
-            timeout: 10000, // 10 second timeout
-          },
-        )
-  
-        // Validate the response
-        if (!response.data || !response.data.token) {
-          throw new Error("Invalid response from PayMob: Token missing")
-        }
-  
-        console.log("Auth token received successfully")
-        return response.data.token
-      } catch (error) {
-        // Enhanced error logging
-        console.error("Error getting auth token:", error.message)
-  
-        // Log detailed error information if available
-        if (error.response) {
-          console.error("Response status:", error.response.status)
-          console.error("Response data:", JSON.stringify(error.response.data))
-          console.error("Response headers:", JSON.stringify(error.response.headers))
-  
-          // Provide more specific error messages based on status codes
-          if (error.response.status === 400) {
-            throw new ApiError(500, "Failed to authenticate with PayMob: Invalid API key or request format")
-          } else if (error.response.status === 401) {
-            throw new ApiError(500, "Failed to authenticate with PayMob: Unauthorized access")
-          } else if (error.response.status === 429) {
-            throw new ApiError(500, "Failed to authenticate with PayMob: Rate limit exceeded")
-          } else {
-            throw new ApiError(500, `Failed to authenticate with PayMob: Server responded with ${error.response.status}`)
-          }
-        } else if (error.request) {
-          // Request was made but no response received
-          console.error("No response received:", error.request)
-          throw new ApiError(500, "Failed to authenticate with PayMob: No response received")
-        } else {
-          // Something else caused the error
-          throw new ApiError(500, "Failed to authenticate with PayMob: " + error.message)
-        }
-      }
-    })
-  }
-  
-
-// Create order on PayMob
-const createPaymobOrder = async (authToken, amount, items) => {
-  try {
-    console.log("Creating PayMob order with token:", authToken ? "Token exists" : "Token missing")
-    console.log("Order amount:", amount)
-    console.log("Order items:", JSON.stringify(items))
-
-    const response = await axios.post("https://accept.paymob.com/api/ecommerce/orders", {
-      auth_token: authToken,
-      delivery_needed: "false",
-      amount_cents: amount * 100, // Convert to cents
-      items: items,
-    })
-    console.log("Create order response status:", response.status)
-    return response.data.id
-  } catch (error) {
-    console.error("Error creating order:", error.message)
-    if (error.response) {
-      console.error("Response data:", error.response.data)
-      console.error("Response status:", error.response.status)
-    }
-    throw new ApiError(500, "Failed to create order on payment gateway: " + error.message)
-  }
+const ApiError = require("../utils/ApiError");
+const asyncHandler = require("express-async-handler");
+const Cart = require("../models/Cart");
+const Transaction = require("../models/Transactions");
+const Order = require("../models/Order");
+const mongoose = require("mongoose"); // Added missing import
+const { FRONTEND_URL } = process.env;
+if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_SECRET_KEY.startsWith('sk_')) {
+  console.error('FATAL: Invalid Stripe API key configuration');
+  process.exit(1);
 }
-
-// Get payment key
-const getPaymentKey = async (authToken, orderId, amount, billingData) => {
-    try {
-      console.log("Getting payment key with token:", authToken ? "Token exists" : "Token missing")
-      console.log("Order ID:", orderId)
-      console.log("Amount:", amount)
-      console.log("Integration ID:", PAYMOB_INTEGRATION_ID)
-  
-      // Validate integration ID
-      if (!PAYMOB_INTEGRATION_ID) {
-        throw new Error("PAYMOB_INTEGRATION_ID is missing or empty")
-      }
-  
-      // Validate billing data
-      if (!billingData.email || !billingData.first_name || !billingData.last_name || !billingData.phone_number) {
-        throw new Error("Required billing data is missing")
-      }
-  
-      const response = await axios.post("https://accept.paymob.com/api/acceptance/payment_keys", {
-        auth_token: authToken,
-        amount_cents: amount * 100,
-        expiration: 3600,
-        order_id: orderId,
-        billing_data: billingData,
-        currency: "EGP",
-        integration_id: PAYMOB_INTEGRATION_ID,
-      })
-  
-      console.log("Payment key response status:", response.status)
-      return response.data.token
-    } catch (error) {
-      console.error("Error getting payment key:", error.message)
-      if (error.response) {
-        console.error("Response data:", JSON.stringify(error.response.data))
-        console.error("Response status:", error.response.status)
-      }
-      throw new ApiError(500, "Failed to generate payment key: " + error.message)
-    }
-  }
-
-// Initialize payment
+// Initialize payment with Stripe
 exports.initializePayment = asyncHandler(async (req, res, next) => {
   try {
-    const { paymentMethod, billingDetails, checkoutId } = req.body;
+    // Verify Stripe key first
+    console.log("Stripe key:", process.env.STRIPE_SECRET_KEY?.substring(0, 8) + "...");
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return next(new ApiError("Payment gateway configuration error", 500));
+    }
+
+    const { billingDetails } = req.body;
     const userId = req.userId;
     
-    console.log("Initialize payment for user:", userId)
-    console.log("Payment method:", paymentMethod)
-    console.log("Billing details:", JSON.stringify(billingDetails))
+    console.log("Initialize payment for user:", userId);
+    console.log("Billing details:", JSON.stringify(billingDetails));
 
     // Validate billing details
-    if (
-      !billingDetails ||
-      !billingDetails.email ||
-      !billingDetails.firstName ||
-      !billingDetails.lastName ||
-      !billingDetails.phoneNumber
-    ) {
-      return next(new ApiError("Missing required billing details", 400))
+    if (!billingDetails || !billingDetails.email || !billingDetails.firstName || 
+        !billingDetails.lastName || !billingDetails.phoneNumber) {
+      return next(new ApiError("Missing required billing details", 400));
     }
 
     // Get user cart
     const cart = await Cart.findOne({ user: userId }).populate({
       path: "items.item",
       select: "name price images description seller",
-    })
+    });
 
     if (!cart || cart.items.length === 0) {
-      return next(new ApiError("Cart is empty", 400))
+      return next(new ApiError("Cart is empty", 400));
     }
 
-    console.log("Cart found with items:", cart.items.length)
-    console.log("Total price:", cart.totalPrice)
+    console.log("Cart found with items:", cart.items.length);
+    console.log("Total price:", cart.totalPrice);
 
-    // Validate PayMob environment variables
-    console.log("Checking PayMob environment variables...")
-    if (!PAYMOB_API_KEY) {
-      console.error("PAYMOB_API_KEY is missing")
-      return next(new ApiError("Payment gateway configuration is incomplete: Missing API_KEY", 500))
-    }
-    if (!PAYMOB_INTEGRATION_ID) {
-      console.error("PAYMOB_INTEGRATION_ID is missing")
-      return next(new ApiError("Payment gateway configuration is incomplete: Missing INTEGRATION_ID", 500))
-    }
-    if (!PAYMOB_IFRAME_ID) {
-      console.error("PAYMOB_IFRAME_ID is missing")
-      return next(new ApiError("Payment gateway configuration is incomplete: Missing IFRAME_ID", 500))
-    }
-    console.log("PayMob environment variables are present")
-
-    // Prepare items for payment gateway
-    console.log("Preparing items for PayMob...")
-    const paymentItems = cart.items.map((item) => ({
-      name: item.item.name|| "Product Item",
-      amount_cents: Math.round(item.item.price * 100),
-      description: item.item.description?.substring(0, 100) || "Product Description",
-      quantity: item.quantity,
-    }))
-    console.log("Items prepared:", paymentItems.length)
-
-    // Try to get authentication token directly
-    console.log("Attempting to get PayMob auth token...")
-    try {
-      // Make the authentication request directly
-      const authResponse = await axios.post(
-        "https://accept.paymob.com/api/auth/tokens",
-        { api_key: PAYMOB_API_KEY },
-        {
-          headers: { "Content-Type": "application/json" },
-          timeout: 10000, // 10 second timeout
-        },
-      )
-
-      console.log("Auth response status:", authResponse.status)
-
-      if (!authResponse.data || !authResponse.data.token) {
-        console.error("Invalid response from PayMob: Token missing")
-        return next(new ApiError("Failed to authenticate with payment gateway: Invalid response", 500))
+    // Prepare items for Stripe with validation
+    const lineItems = cart.items.map((item) => {
+      if (!item.item?.price) {
+        throw new ApiError("Invalid item price", 400);
       }
-
-      const authToken = authResponse.data.token
-      console.log("Auth token received successfully")
-
-      // Create order on PayMob
-      console.log("Creating order on PayMob...")
-      let orderId
-      try {
-        const orderResponse = await axios.post("https://accept.paymob.com/api/ecommerce/orders", {
-          auth_token: authToken,
-          delivery_needed: false,  // Make sure this is a boolean, not a string
-          amount_cents: Math.round(cart.totalPrice * 100),  // Ensure proper formatting
-          currency: "EGP",  // Make sure currency is included
-          merchant_order_id: `ORDER-${Date.now()}`,  // Add a unique merchant order ID
-          items: paymentItems
-        });
-
-        console.log("Order creation response status:", orderResponse.status)
-
-        if (!orderResponse.data || !orderResponse.data.id) {
-          console.error("Invalid response from PayMob: Order ID missing")
-          return next(new ApiError("Failed to create order on payment gateway: Invalid response", 500))
-        }
-
-        orderId = orderResponse.data.id
-        console.log("Order created with ID:", orderId)
-      } catch (orderError) {
-        console.error("Error creating order on PayMob:", orderError.message);
-        if (orderError.response) {
-          console.error("Response data:", JSON.stringify(orderError.response.data));
-          console.error("Response status:", orderError.response.status);
-          console.error("Response headers:", JSON.stringify(orderError.response.headers));
-        } else if (orderError.request) {
-          console.error("No response received:", orderError.request);
-        }
-        return next(new ApiError("Failed to create order on payment gateway: " + orderError.message, 500));
-      }
-
-      // Get payment key
-      console.log("Getting payment key from PayMob...")
-      let paymentKey
-      try {
-        const paymentKeyResponse = await axios.post("https://accept.paymob.com/api/acceptance/payment_keys", {
-          auth_token: authToken,
-          amount_cents: cart.totalPrice * 100,
-          expiration: 3600,
-          order_id: orderId,
-          billing_data: {
-            apartment: billingDetails.apartment || "NA",
-            email: billingDetails.email,
-            floor: billingDetails.floor || "NA",
-            first_name: billingDetails.firstName,
-            street: billingDetails.street,
-            building: billingDetails.building || "NA",
-            phone_number: billingDetails.phoneNumber,
-            shipping_method: "NA",
-            postal_code: billingDetails.postalCode || "NA",
-            city: billingDetails.city,
-            country: billingDetails.country,
-            last_name: billingDetails.lastName,
-            state: billingDetails.state || "NA",
+      
+      return {
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: item.item.name || "Product",
+            description: item.item.description?.substring(0, 100) || "",
+            images: item.item.images?.[0] ? [item.item.images[0]] : [],
           },
-          currency: "EGP",
-          integration_id: PAYMOB_INTEGRATION_ID,
-        })
-
-        console.log("Payment key response status:", paymentKeyResponse.status)
-
-        if (!paymentKeyResponse.data || !paymentKeyResponse.data.token) {
-          console.error("Invalid response from PayMob: Payment key missing")
-          return next(new ApiError("Failed to generate payment key: Invalid response", 500))
-        }
-
-        paymentKey = paymentKeyResponse.data.token
-        console.log("Payment key received successfully")
-      } catch (paymentKeyError) {
-        console.error("Error getting payment key from PayMob:", paymentKeyError.message)
-        if (paymentKeyError.response) {
-          console.error("Response data:", JSON.stringify(paymentKeyError.response.data))
-          console.error("Response status:", paymentKeyError.response.status)
-        }
-        return next(new ApiError("Failed to generate payment key: " + paymentKeyError.message, 500))
-      }
-
-      // Create transaction record
-      console.log("Creating transaction record in database...")
-      let transaction
-      try {
-        transaction = await Transaction.create({
-          buyer: userId,
-          amount: cart.totalPrice,
-          transactionType: "purchase",
-          items: cart.items.map((item) => ({
-            item: item.item._id,
-            quantity: item.quantity,
-            price: item.item.price,
-          })),
-          paymentMethod,
-          status: "pending",
-          gatewayOrderId: orderId,
-          gatewayReference: paymentKey,
-        })
-        console.log("Transaction created with ID:", transaction._id)
-      } catch (dbError) {
-        console.error("Error creating transaction record:", dbError.message)
-        console.error("Error details:", dbError)
-        return next(new ApiError("Failed to create transaction record: " + dbError.message, 500))
-      }
-
-      // Return payment information
-      console.log("Returning payment information to client...")
-      res.status(200).json({
-        status: "success",
-        data: {
-          transactionId: transaction._id,
-          paymentKey,
-          iframeUrl: `https://accept.paymob.com/api/acceptance/iframes/${PAYMOB_IFRAME_ID}?payment_token=${paymentKey}`,
+          unit_amount: Math.round(Number(item.item.price) * 100), // Ensure number
         },
-      })
-    } catch (authError) {
-      console.error("Error authenticating with PayMob:", authError.message)
-      if (authError.response) {
-        console.error("Response data:", JSON.stringify(authError.response.data))
-        console.error("Response status:", authError.response.status)
-      } else if (authError.request) {
-        console.error("No response received from PayMob")
-      }
-      return next(new ApiError("Failed to authenticate with payment gateway: " + authError.message, 500))
-    }
-  } catch (error) {
-    console.error("Payment initialization failed:", error.message)
-    console.error("Error stack:", error.stack)
-    return next(new ApiError(500, error.message || "Payment initialization failed"))
-  }
-})
-
-// Add validation function for HMAC
-function validateHmac(receivedHmac, params) {
-  try {
-    if (!PAYMOB_HMAC_SECRET) {
-      console.warn("HMAC validation skipped: Missing HMAC secret");
-      return true; // Skip validation if secret is not configured
-    }
-    
-    // Create a copy of params without the hmac
-    const paramsToValidate = { ...params };
-    delete paramsToValidate.hmac;
-    
-    // Sort keys alphabetically
-    const sortedKeys = Object.keys(paramsToValidate).sort();
-    
-    // Create string of key=value pairs
-    const concatenatedString = sortedKeys
-      .map(key => `${key}=${paramsToValidate[key]}`)
-      .join('&');
-    
-    // Generate HMAC
-    const crypto = require('crypto');
-    const calculatedHmac = crypto
-      .createHmac('sha512', PAYMOB_HMAC_SECRET)
-      .update(concatenatedString)
-      .digest('hex');
-    
-    return calculatedHmac === receivedHmac;
-  } catch (error) {
-    console.error("HMAC validation error:", error);
-    return false;
-  }
-}
-
-// Process payment callback - FIXED VERSION TO PREVENT REDIRECT LOOP
-// Process payment callback - JSON RESPONSE ONLY VERSION
-exports.paymentCallback = asyncHandler(async (req, res, next) => {
-  try {
-    console.log("Payment callback received");
-    console.log("Full URL:", req.originalUrl);
-    console.log("Query params:", req.query);
-    
-    // Fix: Use let instead of const since we might reassign
-    let orderId = req.query.order || 
-                 (req.params && req.params.order) ||
-                 (req.query['?order'] || '');
-    
-    const transactionId = req.query.transaction_id || 
-                         (req.params && req.params.transaction_id);
-    
-    const success = req.query.success || 
-                   (req.params && req.params.success);
-    
-    const hmac = req.query.hmac || 
-                (req.params && req.params.hmac);
-    
-    console.log("Extracted params:", { orderId, transactionId, success, hmac });
-    
-    if (!orderId && req.originalUrl) {
-      const urlParams = new URLSearchParams(req.originalUrl.split('?')[1]);
-      const manualOrderId = urlParams.get('order');
-      if (manualOrderId) {
-        console.log("Manually extracted order ID:", manualOrderId);
-        orderId = manualOrderId;
-      }
-    }
-    
-    if (!orderId) {
-      console.error("Missing order parameter in callback");
-      return res.status(400).json({
-        status: "error",
-        message: "Missing order parameter in callback"
-      });
-    }
-
-    if (hmac && !validateHmac(hmac, req.query)) {
-      console.error("Invalid HMAC signature");
-      return res.status(400).json({
-        status: "error",
-        message: "Invalid HMAC signature",
-        orderId: orderId
-      });
-    }
-
-    const isSuccess = success && (success.toLowerCase() === "true");
-    return isSuccess 
-      ? await handleSuccessfulPaymentJson(orderId, transactionId, res)
-      : await handleFailedPaymentJson(orderId, transactionId, res);
-
-  } catch (error) {
-    console.error("Payment callback error:", error);
-    return res.status(500).json({
-      status: "error",
-      message: "Server error processing payment callback",
-      error: error.message
+        quantity: Number(item.quantity) || 1,
+      };
     });
+
+    // Validate BASE_URL
+    const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
+    if (!baseUrl.startsWith('http')) {
+      throw new Error('BASE_URL must start with http:// or https://');
+    }
+
+    // Create checkout session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: lineItems,
+      mode: 'payment',
+      success_url: `${baseUrl}/api/payments/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/api/payments/failure?session_id={CHECKOUT_SESSION_ID}`,
+      client_reference_id: userId.toString(),
+      customer_email: billingDetails.email,
+      metadata: { userId: userId.toString() },
+    }, {
+      idempotencyKey: `checkout_${userId}_${Date.now()}`
+    });
+
+    console.log("Stripe checkout session created:", session.id);
+
+    // Create transaction record
+    const transaction = await Transaction.create({
+      buyer: userId,
+      amount: cart.totalPrice,
+      transactionType: "purchase",
+      items: cart.items.map((item) => ({
+        item: item.item._id,
+        quantity: item.quantity,
+        price: item.item.price,
+      })),
+      paymentMethod: "card", // Changed from "stripe" to match your enum
+      status: "pending",
+      gatewayOrderId: session.id,
+      gatewayReference: session.payment_intent || session.id,
+    });
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        transactionId: transaction._id,
+        checkoutSessionId: session.id,
+        paymentUrl: session.url,
+      },
+    });
+  } catch (error) {
+    console.error("Payment initialization failed:", {
+      message: error.message,
+      stack: error.stack,
+      ...(error.raw && { rawError: error.raw.message })
+    });
+    
+    next(new ApiError(
+      error.message || "Payment initialization failed",
+      error.statusCode || 500,
+      {
+        stripeError: error.type,
+        code: error.code,
+      }
+    ));
   }
 });
 
-// Improved successful payment handler
-async function handleSuccessfulPaymentJson(orderId, transactionId, res) {
+// Process payment webhook from Stripe
+exports.stripeWebhook = asyncHandler(async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
   try {
-    console.log("Processing successful payment for order:", orderId);
+    // Verify the webhook signature
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+  } catch (err) {
+    console.error("Webhook signature verification failed:", err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // Handle the event
+  switch (event.type) {
+    case 'checkout.session.completed':
+      await handleSuccessfulPayment(event.data.object);
+      break;
+    case 'payment_intent.payment_failed':
+      await handleFailedPayment(event.data.object);
+      break;
+    default:
+      console.log(`Unhandled event type ${event.type}`);
+  }
+
+  // Return a 200 response to acknowledge receipt of the event
+  res.status(200).json({ received: true });
+});
+
+// Handle successful payments
+async function handleSuccessfulPayment(session) {
+  try {
+    console.log("Processing successful payment for session:", session.id);
     
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    const userId = session.metadata?.userId || session.client_reference_id;
+    if (!userId) {
+      console.error("No user ID found in session metadata");
+      return;
+    }
+
+    const sessionId = session.id;
+    
+    const mongoSession = await mongoose.startSession();
+    mongoSession.startTransaction();
     
     try {
       // 1. Find and validate transaction
-      const transaction = await Transaction.findOne({ gatewayOrderId: orderId }).session(session);
+      const transaction = await Transaction.findOne({ gatewayOrderId: sessionId }).session(mongoSession);
       if (!transaction) {
-        await session.abortTransaction();
-        console.error("Transaction not found for order:", orderId);
-        return res.status(404).json({
-          status: "error",
-          message: "Transaction not found for this order ID",
-          orderId: orderId
-        });
+        await mongoSession.abortTransaction();
+        console.error("Transaction not found for session:", sessionId);
+        return;
       }
 
       // 2. Update transaction status
       transaction.status = "completed";
-      transaction.gatewayTransactionId = transactionId;
+      transaction.gatewayTransactionId = session.payment_intent;
       transaction.completedAt = new Date();
-      await transaction.save({ session });
+      await transaction.save({ session: mongoSession });
 
       // 3. Create order record
       const orderData = {
@@ -497,191 +213,271 @@ async function handleSuccessfulPaymentJson(orderId, transactionId, res) {
         transaction: transaction._id,
       };
 
-      const createdOrder = await Order.create([orderData], { session });
+      const createdOrder = await Order.create([orderData], { session: mongoSession });
       const savedOrder = createdOrder[0];
 
       // 4. Update transaction with order reference
       transaction.relatedOrder = savedOrder._id;
-      await transaction.save({ session });
+      await transaction.save({ session: mongoSession });
 
       // 5. Clear user's cart
       await Cart.findOneAndUpdate(
         { user: transaction.buyer },
         { $set: { items: [], totalPrice: 0 } },
-        { session }
+        { session: mongoSession }
       );
 
-      await session.commitTransaction();
+      await mongoSession.commitTransaction();
       console.log("Transaction completed and order created:", savedOrder._id);
-
-      return res.status(200).json({
-        status: "success",
-        message: "Payment processed successfully",
-        data: {
-          transactionId: transaction._id.toString(),
-          orderId: savedOrder._id.toString(),
-          paymentStatus: "completed",
-          amount: transaction.amount,
-          paymentMethod: transaction.paymentMethod,
-          gatewayTransactionId: transactionId,
-          timestamp: transaction.completedAt
-        }
-      });
-
     } catch (dbError) {
-      await session.abortTransaction();
+      await mongoSession.abortTransaction();
       console.error("Database error in successful payment:", dbError);
-      return res.status(500).json({
-        status: "error",
-        message: "Error processing successful payment",
-        error: dbError.message,
-        orderId: orderId
-      });
     } finally {
-      session.endSession();
+      mongoSession.endSession();
     }
-
   } catch (error) {
     console.error("Unexpected error in payment processing:", error);
-    return res.status(500).json({
-      status: "error",
-      message: "Unexpected error processing payment",
-      error: error.message,
-      orderId: orderId
-    });
   }
 }
-// Helper function for failed payments - JSON RESPONSE ONLY
-async function handleFailedPaymentJson(orderId, transactionId, res) {
+
+// Handle failed payments
+async function handleFailedPayment(paymentIntent) {
   try {
-    console.log("Processing failed payment for order:", orderId);
+    console.log("Processing failed payment for intent:", paymentIntent.id);
     
+    // Find the transaction by payment intent ID
     const transaction = await Transaction.findOneAndUpdate(
-      { gatewayOrderId: orderId },
+      { gatewayReference: paymentIntent.id },
       { 
         status: "failed", 
-        gatewayTransactionId: transactionId,
         failedAt: new Date() 
       },
-      { new: true } // Return updated document
+      { new: true }
     );
 
-    // Return failure JSON response
-    return res.status(200).json({
-      status: "failed",
-      message: "Payment failed",
-      data: {
-        transactionId: transaction ? transaction._id.toString() : null,
-        gatewayOrderId: orderId,
-        gatewayTransactionId: transactionId || "unknown",
-        timestamp: new Date().toISOString()
-      }
-    });
-
+    if (!transaction) {
+      console.error("Transaction not found for payment intent:", paymentIntent.id);
+    } else {
+      console.log("Transaction marked as failed:", transaction._id);
+    }
   } catch (updateError) {
     console.error("Error updating failed transaction:", updateError);
-    return res.status(500).json({
-      status: "error",
-      message: "Error updating failed transaction",
-      error: updateError.message,
-      orderId: orderId
-    });
   }
 }
+exports.paymentSuccess = asyncHandler(async (req, res) => {
+  try {
+    const { session_id } = req.query;
+    
+    // Validate session ID
+    if (!session_id || typeof session_id !== 'string') {
+      return res.status(400).json({
+        status: "error",
+        message: "Invalid or missing session ID"
+      });
+    }
+
+    // Verify the session with Stripe
+    const session = await stripe.checkout.sessions.retrieve(session_id, {
+      expand: ['payment_intent']
+    });
+
+    // Validate payment status
+    if (session.payment_status !== 'paid') {
+      return res.status(400).json({
+        status: "error",
+        message: "Payment not completed",
+        paymentStatus: session.payment_status
+      });
+    }
+
+    // Update transaction status in database
+    const transaction = await Transaction.findOneAndUpdate(
+      { gatewayOrderId: session_id },
+      { 
+        status: "completed",
+        gatewayTransactionId: session.payment_intent?.id,
+        completedAt: new Date() 
+      },
+      { new: true }
+    ).populate('relatedOrder');
+
+    if (!transaction) {
+      return res.status(404).json({
+        status: "error",
+        message: "Transaction not found"
+      });
+    }
+
+    // Return success response with detailed information
+    res.status(200).json({
+      status: "success",
+      data: {
+        sessionId: session_id,
+        paymentStatus: session.payment_status,
+        amountPaid: session.amount_total / 100, // Convert from cents
+        currency: session.currency,
+        transactionId: transaction._id,
+        orderId: transaction.relatedOrder?._id,
+        paymentMethod: session.payment_method_types?.[0]
+      }
+    });
+    
+  } catch (error) {
+    console.error("Payment success processing error:", {
+      message: error.message,
+      stack: error.stack,
+      ...(error.type && { type: error.type })
+    });
+
+    res.status(500).json({
+      status: "error",
+      message: "Error processing payment confirmation",
+      ...(process.env.NODE_ENV === 'development' && { 
+        detail: error.message 
+      })
+    });
+  }
+});
+exports.paymentFailure = asyncHandler(async (req, res) => {
+  try {
+    const { session_id } = req.query;
+
+    // Validate session ID
+    if (!session_id || typeof session_id !== 'string') {
+      return res.status(400).json({
+        status: "error",
+        message: "Invalid or missing session ID"
+      });
+    }
+
+    // Attempt to retrieve session details for more context
+    let session;
+    try {
+      session = await stripe.checkout.sessions.retrieve(session_id);
+    } catch (stripeError) {
+      console.warn("Could not retrieve failed session:", stripeError.message);
+    }
+
+    // Update transaction status if exists
+    await Transaction.findOneAndUpdate(
+      { gatewayOrderId: session_id },
+      { 
+        status: "failed",
+        failedAt: new Date() 
+      }
+    );
+
+    // Return failure response
+    res.status(200).json({
+      status: "failed",
+      message: "Payment failed or was cancelled",
+      data: {
+        sessionId: session_id,
+        ...(session && {
+          paymentStatus: session.payment_status,
+          failureReason: session.payment_intent?.last_payment_error?.message
+        })
+      }
+    });
+  } catch (error) {
+    console.error("Payment failure processing error:", error.message);
+    res.status(500).json({
+      status: "error",
+      message: "Error processing payment failure",
+      ...(process.env.NODE_ENV === 'development' && { 
+        detail: error.message 
+      })
+    });
+  }
+});
 // Get payment methods
 exports.getPaymentMethods = asyncHandler(async (req, res) => {
   try {
     const paymentMethods = [
       { id: "card", name: "Credit/Debit Card", enabled: true },
-      { id: "vodafone-cash", name: "Vodafone Cash", enabled: true },
-      { id: "orange-money", name: "Orange Money", enabled: true },
-      { id: "etisalat-cash", name: "Etisalat Cash", enabled: true },
-      { id: "we-pay", name: "WE Pay", enabled: true },
-      { id: "fawry", name: "Fawry", enabled: true },
-      { id: "meeza", name: "Meeza", enabled: true },
       { id: "cod", name: "Cash on Delivery", enabled: true },
-    ]
+    ];
 
     res.status(200).json({
       status: "success",
       data: paymentMethods,
-    })
+    });
   } catch (error) {
-    console.error("Error getting payment methods:", error)
+    console.error("Error getting payment methods:", error);
     res.status(500).json({
       status: "error",
       message: "Failed to retrieve payment methods",
-    })
+    });
   }
-})
+});
 
 // Get transaction by ID
 exports.getTransaction = asyncHandler(async (req, res, next) => {
   try {
-    console.log("Getting transaction with ID:", req.params.id)
-    const transaction = await Transaction.findById(req.params.id)
+    console.log("Getting transaction with ID:", req.params.id);
+    const transaction = await Transaction.findById(req.params.id);
 
     if (!transaction) {
-      console.log("Transaction not found with ID:", req.params.id)
-      return next(new ApiError("Transaction not found", 404))
+      console.log("Transaction not found with ID:", req.params.id);
+      return next(new ApiError("Transaction not found", 404));
     }
 
     res.status(200).json({
       status: "success",
       data: transaction,
-    })
+    });
   } catch (error) {
-    console.error("Error getting transaction:", error)
-    next(new ApiError("Failed to retrieve transaction", 500))
+    console.error("Error getting transaction:", error);
+    next(new ApiError("Failed to retrieve transaction", 500));
   }
-})
+});
 
 // Get user transactions
 exports.getUserTransactions = asyncHandler(async (req, res) => {
   try {
-    console.log("Getting transactions for user:", req.userId)
+    console.log("Getting transactions for user:", req.userId);
     const transactions = await Transaction.find({
       buyer: req.userId,
       transactionType: "purchase",
-    }).sort("-timestamp")
+    }).sort("-timestamp");
 
-    console.log("Found transactions:", transactions.length)
+    console.log("Found transactions:", transactions.length);
 
     res.status(200).json({
       status: "success",
       results: transactions.length,
       data: transactions,
-    })
+    });
   } catch (error) {
-    console.error("Error getting user transactions:", error)
+    console.error("Error getting user transactions:", error);
     res.status(500).json({
       status: "error",
       message: "Failed to retrieve transactions",
-    })
+    });
   }
-})
+});
 
 // Create COD order directly
 exports.createCodOrder = asyncHandler(async (req, res, next) => {
   try {
-    const { shippingAddress } = req.body
-    const userId = req.userId
+    const { shippingAddress } = req.body;
+    const userId = req.userId;
 
-    console.log("Creating COD order for user:", userId)
-    console.log("Shipping address:", JSON.stringify(shippingAddress))
+    console.log("Creating COD order for user:", userId);
+    console.log("Shipping address:", JSON.stringify(shippingAddress));
 
     // Get user cart
     const cart = await Cart.findOne({ user: userId }).populate({
       path: "items.item",
       select: "name price images description seller",
-    })
+    });
 
     if (!cart || cart.items.length === 0) {
-      return next(new ApiError("Cart is empty", 400))
+      return next(new ApiError("Cart is empty", 400));
     }
 
-    console.log("Cart found with items:", cart.items.length)
-    console.log("Total price:", cart.totalPrice)
+    console.log("Cart found with items:", cart.items.length);
+    console.log("Total price:", cart.totalPrice);
 
     // Create transaction for tracking
     const transaction = await Transaction.create({
@@ -695,9 +491,9 @@ exports.createCodOrder = asyncHandler(async (req, res, next) => {
       })),
       paymentMethod: "cod",
       status: "pending",
-    })
+    });
 
-    console.log("Transaction created with ID:", transaction._id)
+    console.log("Transaction created with ID:", transaction._id);
 
     // Create order
     const order = await Order.create({
@@ -712,25 +508,25 @@ exports.createCodOrder = asyncHandler(async (req, res, next) => {
       paymentMethod: "cod",
       paymentStatus: "pending",
       transaction: transaction._id,
-    })
+    });
 
-    console.log("Order created with ID:", order._id)
+    console.log("Order created with ID:", order._id);
 
     // Update transaction with order reference
-    transaction.relatedOrder = order._id
-    await transaction.save()
-    console.log("Transaction updated with order reference")
+    transaction.relatedOrder = order._id;
+    await transaction.save();
+    console.log("Transaction updated with order reference");
 
     // Clear cart
-    await Cart.findOneAndUpdate({ user: userId }, { items: [], totalPrice: 0 })
-    console.log("Cart cleared for user:", userId)
+    await Cart.findOneAndUpdate({ user: userId }, { items: [], totalPrice: 0 });
+    console.log("Cart cleared for user:", userId);
 
     res.status(201).json({
       status: "success",
       data: order,
-    })
+    });
   } catch (error) {
-    console.error("Error creating COD order:", error)
-    next(new ApiError("Failed to create order", 500))
+    console.error("Error creating COD order:", error);
+    next(new ApiError("Failed to create order", 500));
   }
-})
+});

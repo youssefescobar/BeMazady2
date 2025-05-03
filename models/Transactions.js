@@ -27,7 +27,7 @@ const TransactionSchema = new mongoose.Schema({
   ],
   paymentMethod: {
     type: String,
-    enum: ["card", "vodafone-cash", "orange-money", "etisalat-cash", "we-pay", "fawry", "meeza", "cod", "refund"],
+    enum: ["card", "stripe","vodafone-cash", "orange-money", "etisalat-cash", "we-pay", "fawry", "meeza", "cod", "refund"],
     required: true,
   },
   status: {

@@ -10,8 +10,6 @@ const compression = require("compression"); // Compression middleware
 const rateLimit = require("express-rate-limit"); // Rate limiting middleware
 const helmet = require("helmet"); // Helmet middleware
 
-
-
 const { initScheduledTasks } = require('./services/scheduledTasks');
 const notificationRoutes = require("./routes/NotificationRoutes");
 const messageRoutes = require("./routes/MessageRoutes");
@@ -31,7 +29,7 @@ const analyticsRoutes = require('./routes/AnalyticsRoutes');
 const paymentRoutes = require('./routes/PaymentRoute');
 const orderRoutes = require('./routes/OrderRoute');
 
-const ReverseAuctionRoute = require("./routes/ReverseAuctionRoute"); // Add this line
+const ReverseAuctionRoute = require("./routes/ReverseAuctionRoute");
 
 // Initialize Express app
 const app = express();
@@ -42,33 +40,26 @@ const io = socketIo(server);
 dbConnect();
 
 // Middleware
-
 app.use(compression());
 // app.use(helmet());  
 
+// Rate limiting
 // const limiter = rateLimit({
 //   windowMs: 15 * 60 * 1000, // 15 minutes
 //   max: 100, // Max 100 requests per IP
 //   message: "Too many requests from this IP, please try again later."
 // });
 // app.use(limiter);
+
+// Important: Stripe webhook needs raw body, so we need to use the raw parser for /api/payments/webhook
+app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
+
+// Standard body parsers for other routes
 app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // Add this line to handle URL-encoded data
+app.use(express.urlencoded({ extended: true }));
 
 app.use(morgan("dev"));
 
-// let redirectCounts = {};
-
-// app.use((req, res, next) => {
-//   const url = req.originalUrl;
-//   redirectCounts[url] = (redirectCounts[url] || 0) + 1;
-  
-//   if (redirectCounts[url] > 3) {
-//     console.error(`Redirect loop detected for ${url}`);
-//     return res.status(500).json({ error: 'Redirect loop detected' });
-//   }
-//   next();
-// });
 app.use((err, req, res, next) => {
   console.error('Server Error:', err.message);
 
@@ -98,25 +89,10 @@ app.use("/api/reverseauctions", ReverseAuctionRoute);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/orders', orderRoutes); 
 
-
 app.get('/', (req, res) => {
   res.send('Api is running ya tohamy');
 })
-app.get('/payment/success', (req, res) => {
-  return res.status(200).json({
-    status: "success",
-    message: "Payment successful",
-    data: req.query
-  });
-});
 
-app.get('/payment/failure', (req, res) => {
-  return res.status(200).json({
-    status: "failed",
-    message: "Payment failed",
-    data: req.query
-  });
-});
 // Handle route errors - ONLY ONE catch-all handler
 app.all("*", (req, res, next) => {
   next(new ApiError(`Can't find this route: ${req.originalUrl}`, 400));
@@ -177,5 +153,4 @@ server.listen(PORT, () => {
     initScheduledTasks(app);
     console.log("Scheduled tasks initialized");
   }, 3000)
-
-}); 
+});
