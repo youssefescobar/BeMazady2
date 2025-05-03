@@ -10,6 +10,6 @@ const {
 router.post("/create-checkout-session", protect, createCheckoutSession);
 
 // Stripe webhook
-router.post("/webhook", express.raw({ type: "application/json" }), handleWebhook);
+router.post("/webhook", handleWebhook);
 
 module.exports = router;
