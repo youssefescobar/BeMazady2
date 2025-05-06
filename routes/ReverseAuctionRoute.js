@@ -16,7 +16,7 @@ const {
   prepareCheckout,
   processPayment,
   paymentCallback
-} = require("../controllers/reverseAuctionController");
+} = require("../controllers/ReverseAuctionController");
 
 // Import middlewares - assuming direct function exports
 const AuthMiddle = require("../middlewares/AuthMiddle.js");

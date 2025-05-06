@@ -1,157 +1,213 @@
-const asyncHandler = require('express-async-handler');
-const ApiError = require('../utils/ApiError');
-const analyticsService = require('../services/analyticsService');
-// Get comprehensive admin dashboard statistics
-const getAdminDashboard = asyncHandler(async (req, res) => {
-  const { period } = req.query;
-  
-  const stats = await analyticsService.getAdminDashboardStats(period);
-  
-  res.status(200).json({
-    success: true,
-    data: stats
-  });
-});
+const Order = require("../models/Order");
+const User = require("../models/User");
+const Item = require("../models/Item");
+const Auction = require("../models/Auction");
+const asyncHandler = require("express-async-handler");
 
-// Get seller dashboard statistics
-const getSellerDashboard = asyncHandler(async (req, res) => {
-  const { period } = req.query;
-  const sellerId = req.user.id;
-  
-  const stats = await analyticsService.getSellerStats(sellerId, period);
-  
-  res.status(200).json({
-    success: true,
-    data: stats
-  });
-});
+// ========== ADMIN CONTROLLERS ==========
 
-// Get item analytics
-const getItemAnalytics = asyncHandler(async (req, res) => {
-  const { itemId } = req.params;
-  
-  const stats = await analyticsService.getItemAnalytics(itemId);
-  
-  res.status(200).json({
-    success: true,
-    data: stats
-  });
-});
-
-// Get user growth analytics (admin only)
-const getUserGrowthAnalytics = asyncHandler(async (req, res) => {
-  const { startDate, endDate, groupBy } = req.query;
-  
-  const analytics = await analyticsService.getUserGrowthAnalytics(
-    startDate, 
-    endDate, 
-    groupBy
-  );
-  
-  res.status(200).json({
-    success: true,
-    data: analytics
-  });
-});
-
-// Get auction analytics (admin only)
-const getAuctionAnalytics = asyncHandler(async (req, res) => {
-  const { startDate, endDate, groupBy } = req.query;
-  
-  const analytics = await analyticsService.getAuctionAnalytics(
-    startDate, 
-    endDate, 
-    groupBy
-  );
-  
-  res.status(200).json({
-    success: true,
-    data: analytics
-  });
-});
-
-// Get financial report with commission breakdown (admin only)
-const getFinancialReport = asyncHandler(async (req, res) => {
-  const { startDate, endDate, groupBy = 'month' } = req.query;
-  
-  const report = await analyticsService.getFinancialReport(startDate, endDate, groupBy);
-  
-  res.status(200).json({
-    success: true,
-    data: report
-  });
-});
-
-// Get commission analytics (admin only)
-const getCommissionAnalytics = asyncHandler(async (req, res) => {
-  const { period, detailed } = req.query;
-  
-  const stats = await analyticsService.getCommissionAnalytics(period, detailed);
-  
-  res.status(200).json({
-    success: true,
-    data: stats
-  });
-});
-
-// Get top sellers analytics (admin only)
-const getTopSellers = asyncHandler(async (req, res) => {
-  const { limit, period } = req.query;
-  
-  const sellers = await analyticsService.getTopSellers(limit, period);
-  
-  res.status(200).json({
-    success: true,
-    data: sellers
-  });
-});
-
-// Get category performance analytics (admin only)
-const getCategoryAnalytics = asyncHandler(async (req, res) => {
-  const { period } = req.query;
-  
-  const stats = await analyticsService.getCategoryAnalytics(period);
-  
-  res.status(200).json({
-    success: true,
-    data: stats
-  });
-});
-
-// Get platform growth metrics (admin only)
-const getPlatformGrowth = asyncHandler(async (req, res) => {
+// GET /api/analytics/admin/overview
+exports.getAdminOverview = asyncHandler(async (req, res) => {
   const { startDate, endDate } = req.query;
-  
-  const growth = await analyticsService.getPlatformGrowth(startDate, endDate);
-  
-  res.status(200).json({
-    success: true,
-    data: growth
+
+  const match = {
+    status: "paid",
+  };
+
+  if (startDate && endDate) {
+    match.createdAt = {
+      $gte: new Date(startDate),
+      $lte: new Date(endDate),
+    };
+  }
+
+  const orders = await Order.aggregate([
+    { $match: match },
+    { $unwind: "$items" },
+    {
+      $group: {
+        _id: "$items.itemType",
+        totalRevenue: { $sum: "$items.priceAtPurchase" },
+        profit: {
+          $sum: {
+            $cond: [
+              { $eq: ["$items.itemType", "auction"] },
+              { $multiply: ["$items.priceAtPurchase", 0.05] },
+              { $multiply: ["$items.priceAtPurchase", 0.03] },
+            ],
+          },
+        },
+      },
+    },
+  ]);
+
+  let totalRevenue = 0;
+  let totalProfit = 0;
+  const breakdown = {};
+
+  orders.forEach((o) => {
+    breakdown[o._id] = {
+      revenue: o.totalRevenue,
+      profit: o.profit,
+    };
+    totalRevenue += o.totalRevenue;
+    totalProfit += o.profit;
+  });
+
+  res.json({
+    totalRevenue,
+    totalProfit,
+    breakdown,
   });
 });
 
-// Get conversion metrics (admin only)
-const getConversionMetrics = asyncHandler(async (req, res) => {
-  const { period } = req.query;
-  
-  const metrics = await analyticsService.getConversionMetrics(period);
-  
-  res.status(200).json({
-    success: true,
-    data: metrics
+// GET /api/analytics/admin/users?role=seller
+exports.getUserCount = asyncHandler(async (req, res) => {
+  const { role } = req.query;
+  const filter = role ? { role } : {};
+  const count = await User.countDocuments(filter);
+  res.json({ count });
+});
+
+// GET /api/analytics/admin/items?status=available
+exports.getItemCount = asyncHandler(async (req, res) => {
+  const { status } = req.query;
+  const filter = status ? { item_status: status } : {};
+  const count = await Item.countDocuments(filter);
+  res.json({ count });
+});
+
+// GET /api/analytics/admin/auctions?status=completed
+exports.getAuctionCount = asyncHandler(async (req, res) => {
+  const { status } = req.query;
+  const filter = status ? { status } : {};
+  const count = await Auction.countDocuments(filter);
+  res.json({ count });
+});
+
+// GET /api/analytics/admin/top-sellers
+exports.getTopSellers = asyncHandler(async (req, res) => {
+  const sellers = await Order.aggregate([
+    { $match: { status: "paid" } },
+    { $unwind: "$items" },
+    {
+      $group: {
+        _id: "$items.seller",
+        totalSales: { $sum: "$items.priceAtPurchase" },
+        profit: {
+          $sum: {
+            $cond: [
+              { $eq: ["$items.itemType", "auction"] },
+              { $multiply: ["$items.priceAtPurchase", 0.05] },
+              { $multiply: ["$items.priceAtPurchase", 0.03] },
+            ],
+          },
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: "users",
+        localField: "_id",
+        foreignField: "_id",
+        as: "seller",
+      },
+    },
+    { $unwind: "$seller" },
+    {
+      $project: {
+        username: "$seller.username",
+        email: "$seller.email",
+        totalSales: 1,
+        profit: 1,
+      },
+    },
+    { $sort: { totalSales: -1 } },
+    { $limit: 10 },
+  ]);
+
+  res.json(sellers);
+});
+
+// ========== SELLER CONTROLLERS ==========
+
+// GET /api/analytics/seller/overview
+exports.getSellerOverview = asyncHandler(async (req, res) => {
+  const sellerId = req.userId;
+
+  const [itemCount, auctionCount] = await Promise.all([
+    Item.countDocuments({ owner: sellerId }),
+    Auction.countDocuments({ seller: sellerId }),
+  ]);
+
+  const orders = await Order.aggregate([
+    { $match: { status: "paid" } },
+    { $unwind: "$items" },
+    { $match: { "items.seller": sellerId } },
+    {
+      $group: {
+        _id: "$items.itemType",
+        totalSold: { $sum: 1 },
+        revenue: { $sum: "$items.priceAtPurchase" },
+      },
+    },
+  ]);
+
+  const stats = {
+    itemCount,
+    auctionCount,
+    itemSold: 0,
+    auctionSold: 0,
+    revenue: 0,
+  };
+
+  orders.forEach((o) => {
+    if (o._id === "item") stats.itemSold = o.totalSold;
+    else if (o._id === "auction") stats.auctionSold = o.totalSold;
+    stats.revenue += o.revenue;
+  });
+
+  res.json(stats);
+});
+
+// GET /api/analytics/seller/my-items?status=available&page=1&limit=10
+exports.getMyItems = asyncHandler(async (req, res) => {
+  const { status, page = 1, limit = 10 } = req.query;
+  const filter = { owner: req.userId };
+  if (status) filter.item_status = status;
+
+  const [total, items] = await Promise.all([
+    Item.countDocuments(filter),
+    Item.find(filter)
+      .skip((page - 1) * limit)
+      .limit(Number(limit)),
+  ]);
+
+  res.json({
+    total,
+    page: Number(page),
+    pages: Math.ceil(total / limit),
+    items,
   });
 });
 
-module.exports = {
-  getAdminDashboard,
-  getSellerDashboard,
-  getItemAnalytics,
-  getUserGrowthAnalytics,
-  getAuctionAnalytics,
-  getFinancialReport,
-  getCommissionAnalytics,
-  getTopSellers,
-  getCategoryAnalytics,
-  getPlatformGrowth,
-  getConversionMetrics
-};
+// GET /api/analytics/seller/my-auctions?status=completed&page=1&limit=10
+exports.getMyAuctions = asyncHandler(async (req, res) => {
+  const { status, page = 1, limit = 10 } = req.query;
+  const filter = { seller: req.userId };
+  if (status) filter.status = status;
+
+  const [total, auctions] = await Promise.all([
+    Auction.countDocuments(filter),
+    Auction.find(filter)
+      .skip((page - 1) * limit)
+      .limit(Number(limit)),
+  ]);
+
+  res.json({
+    total,
+    page: Number(page),
+    pages: Math.ceil(total / limit),
+    auctions,
+  });
+});

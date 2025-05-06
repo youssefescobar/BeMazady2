@@ -1,84 +1,65 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
+const analyticsController = require("../controllers/AnalyticsController");
 const protect = require("../middlewares/AuthMiddle");
 const authorize = require("../middlewares/AuthorizeMiddle");
 
-const authMiddleware = protect;
-const adminMiddleware = authorize('admin');
-const sellerMiddleware = authorize('seller', 'admin');
-const analyticsService = require('../services/analyticsService');
+// ========= ADMIN =========
+router.get(
+  "/admin/overview",
+  protect,
+  authorize("admin"),
+  analyticsController.getAdminOverview
+);
 
-const {
-  getAdminDashboard,
-  getSellerDashboard,
-  getItemAnalytics,
-  getUserGrowthAnalytics,
-  getAuctionAnalytics,
-  getFinancialReport,
-  getCommissionAnalytics,
-  getTopSellers,
-  getCategoryAnalytics,
-  getPlatformGrowth,
-  getConversionMetrics
-} = require('../controllers/AnalyticsController');
+router.get(
+  "/admin/users",
+  protect,
+  authorize("admin"),
+  analyticsController.getUserCount
+);
 
-// ======================
-// ADMIN ANALYTICS ROUTES
-// ======================
+router.get(
+  "/admin/items",
+  protect,
+  authorize("admin"),
+  analyticsController.getItemCount
+);
 
-// Main admin dashboard with comprehensive stats
-router.get('/admin/dashboard', authMiddleware, adminMiddleware, getAdminDashboard);//dn
+router.get(
+  "/admin/auctions",
+  protect,
+  authorize("admin"),
+  analyticsController.getAuctionCount
+);
 
-// User growth analytics
-router.get('/admin/users/growth', authMiddleware, adminMiddleware, getUserGrowthAnalytics);
-// Auction performance analytics
-// Auction analytics route
-router.get('/admin/auctions/analytics', authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { startDate, endDate, groupBy } = req.query;
-    const analytics = await analyticsService.getAuctionAnalytics(startDate, endDate, groupBy);
-    
-    res.status(200).json({
-      success: true,
-      data: analytics
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-});
-// Financial reporting with commission breakdown
-router.get('/admin/financial-report', authMiddleware, adminMiddleware, getFinancialReport);//dn
+router.get(
+  "/admin/top-sellers",
+  protect,
+  authorize("admin"),
+  analyticsController.getTopSellers
+);
 
-// Detailed commission analytics
-router.get('/admin/commissions', authMiddleware, adminMiddleware, getCommissionAnalytics);//dn
+// ========= SELLER =========
+router.get(
+  "/seller/overview",
+  protect,
+  authorize("seller", "admin"),
+  analyticsController.getSellerOverview
+);
 
-// Top sellers ranking
-router.get('/admin/top-sellers', authMiddleware, adminMiddleware, getTopSellers);//dn
+router.get(
+  "/seller/my-items",
+  protect,
+  authorize("seller", "admin"),
+  analyticsController.getMyItems
+);
 
-// Category performance analytics
-router.get('/admin/categories', authMiddleware, adminMiddleware, getCategoryAnalytics);//dn
-
-// Platform growth metrics
-router.get('/admin/platform-growth', authMiddleware, adminMiddleware, getPlatformGrowth);//dn
-
-// Conversion metrics
-router.get('/admin/conversions', authMiddleware, adminMiddleware, getConversionMetrics);
-
-// =======================
-// SELLER ANALYTICS ROUTES
-// =======================
-
-// Seller dashboard with performance metrics
-router.get('/seller/dashboard', authMiddleware, sellerMiddleware, getSellerDashboard);//dn
-
-// =====================
-// ITEM ANALYTICS ROUTES
-// =====================
-
-// Item performance analytics - accessible by both admins and the item's seller
-router.get('/items/:itemId/analytics', authMiddleware, getItemAnalytics);//dn
+router.get(
+  "/seller/my-auctions",
+  protect,
+  authorize("seller", "admin"),
+  analyticsController.getMyAuctions
+);
 
 module.exports = router;
