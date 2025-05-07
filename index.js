@@ -5,6 +5,8 @@ const http = require("http"); // For Socket.IO
 const jwt = require("jsonwebtoken");
 const socketIo = require("socket.io");
 const mongoose = require("mongoose");
+const cors = require("cors");
+
 
 const compression = require("compression"); // Compression middleware
 const rateLimit = require("express-rate-limit"); // Rate limiting middleware
@@ -57,6 +59,12 @@ app.use(
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // Add this line to handle URL-encoded data
+
+app.use(cors({
+  origin: "http://localhost:5173",
+  credentials: true
+}));
+
 
 app.use(morgan("dev"));
 
