@@ -60,8 +60,19 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // Add this line to handle URL-encoded data
 
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://bemzady.netlify.app"
+];
+
 app.use(cors({
-  origin: "http://localhost:5173"||"https://bemzady.netlify.app/",
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true
 }));
 
