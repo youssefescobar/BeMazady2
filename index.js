@@ -61,7 +61,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // Add this line to handle URL-encoded data
 
 app.use(cors({
-  origin: "http://localhost:5173",
+  origin: "http://localhost:5173"||"https://bemzady.netlify.app/",
   credentials: true
 }));
 
