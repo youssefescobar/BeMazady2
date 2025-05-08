@@ -1,17 +1,14 @@
 const express = require("express");
 const dotenv = require("dotenv").config();
 const morgan = require("morgan");
-const http = require("http"); // For Socket.IO
-const jwt = require("jsonwebtoken");
+const http = require("http");
 const socketIo = require("socket.io");
-const mongoose = require("mongoose");
 const cors = require("cors");
+const compression = require("compression");
+const rateLimit = require("express-rate-limit");
+const helmet = require("helmet");
 
-
-const compression = require("compression"); // Compression middleware
-const rateLimit = require("express-rate-limit"); // Rate limiting middleware
-const helmet = require("helmet"); // Helmet middleware
-
+// Import routes and middleware
 const { initScheduledTasks } = require("./services/scheduledTasks");
 const notificationRoutes = require("./routes/NotificationRoutes");
 const messageRoutes = require("./routes/MessageRoutes");
@@ -29,37 +26,45 @@ const CartRoutes = require("./routes/CartRoute");
 const paymentRoutes = require("./routes/paymentRoutes");
 const OrderRoutes = require("./routes/OrderRoutes");
 const analyticsRoutes = require("./routes/AnalyticsRoutes");
-
-const ReverseAuctionRoute = require("./routes/ReverseAuctionRoute"); // Add this line
+const ReverseAuctionRoute = require("./routes/ReverseAuctionRoute");
 
 // Initialize Express app
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+const io = socketIo(server, {
+  cors: {
+    origin: [
+      "http://localhost:5173",
+      "https://bemzady.netlify.app"
+    ],
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
 
 // Connect to database
 dbConnect();
 
 // Middleware
-
 app.use(compression());
 // app.use(helmet());
 
 // const limiter = rateLimit({
-//   windowMs: 15 * 60 * 1000, // 15 minutes
-//   max: 100, // Max 100 requests per IP
+//   windowMs: 15 * 60 * 1000,
+//   max: 100,
 //   message: "Too many requests from this IP, please try again later."
 // });
 // app.use(limiter);
+
 app.use(
   "/api/payment/webhook",
-  require("express").raw({ type: "application/json" })
+  express.raw({ type: "application/json" })
 );
 
-
 app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // Add this line to handle URL-encoded data
+app.use(express.urlencoded({ extended: true }));
 
+// Enhanced CORS configuration
 const allowedOrigins = [
   "http://localhost:5173",
   "https://bemzady.netlify.app"
@@ -67,24 +72,34 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Check against allowed origins or any subpath of bemzady.netlify.app
+    if (allowedOrigins.some(allowedOrigin => 
+        origin === allowedOrigin || 
+        origin.startsWith(allowedOrigin) ||
+        origin.endsWith('.bemzady.netlify.app'))) {
+      return callback(null, true);
     }
+    
+    const msg = `CORS policy doesn't allow access from: ${origin}`;
+    return callback(new Error(msg), false);
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
+// Handle preflight requests
+app.options('*', cors());
 
 app.use(morgan("dev"));
 
+// Error handling middleware
 app.use((err, req, res, next) => {
   console.error("Server Error:", err.message);
-
-  // Optional: if you want to differentiate custom errors
   const statusCode = err.statusCode || 500;
-
   res.status(statusCode).json({
     status: "error",
     message: err.message || "Internal Server Error",
@@ -108,16 +123,16 @@ app.use("/api/orders", OrderRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use("/api/reverseauctions", ReverseAuctionRoute);
 
-
 app.get("/", (req, res) => {
-  res.send("Api is running ya tohamy");
+  res.send("Api is running");
 });
-// Handle route errors - ONLY ONE catch-all handler
+
+// Handle route errors
 app.all("*", (req, res, next) => {
   next(new ApiError(`Can't find this route: ${req.originalUrl}`, 400));
 });
 
-// Handle express errors
+// Global error handler
 app.use(globalhandel);
 
 // Handle non-express errors
@@ -132,26 +147,20 @@ const connectedUsers = {};
 io.on("connection", (socket) => {
   console.log("New client connected");
 
-  // User authentication for socket
   socket.on("authenticate", (userId) => {
     console.log(`User ${userId} authenticated on socket`);
     connectedUsers[userId] = socket.id;
     socket.userId = userId;
-
-    // Broadcast user's online status
     socket.broadcast.emit("user_status_changed", {
       userId,
       status: "online",
     });
   });
 
-  // Handle disconnection
   socket.on("disconnect", () => {
     console.log("Client disconnected");
     if (socket.userId) {
       delete connectedUsers[socket.userId];
-
-      // Broadcast user's offline status
       socket.broadcast.emit("user_status_changed", {
         userId: socket.userId,
         status: "offline",
@@ -160,16 +169,16 @@ io.on("connection", (socket) => {
   });
 });
 
-// Make io accessible to our routes
+// Make io accessible to routes
 app.set("io", io);
 app.set("connectedUsers", connectedUsers);
 
 // Start server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log(`Online on port: ${PORT}`);
+  console.log(`Server running on port: ${PORT}`);
   setTimeout(() => {
     initScheduledTasks(app);
     console.log("Scheduled tasks initialized");
   }, 3000);
-}); 
+});
