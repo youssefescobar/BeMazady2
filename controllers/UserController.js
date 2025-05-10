@@ -1,5 +1,6 @@
 const User = require("../models/User");
 const Auction = require("../models/Auction");
+const Bid = require("../models/Bid");
 const bcrypt = require("bcrypt");
 const path = require("path");
 const jwt = require("jsonwebtoken");
@@ -285,33 +286,40 @@ const getLoggedUser = asyncHandler(async (req, res, next) => {
 });
 
 // Get auctions won or bought by the current user
-const getWonAuctions = asyncHandler(async (req, res) => {
-  try {
-    const userId = req.user.id;
+const getMyAuctions = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+  const { won, participated, seller } = req.query;
 
-    // Find auctions where the user is the winning bidder
-    const wonAuctions = await Auction.find({
-      winningBidder: userId,
-      status: "completed",
-    })
-      .populate("seller", "username _id")
-      .populate("category", "name")
-      .populate({
-        path: "bids",
-        match: { bidder: userId },
-        options: { sort: { amount: -1 } },
-      })
-      .sort("-endDate");
+  const query = {};
 
-    res.status(200).json({
-      success: true,
-      data: wonAuctions,
-    });
-  } catch (error) {
-    console.error("Error fetching user's won auctions:", error);
-    res.status(500).json({ success: false, message: error.message });
+  if (won === "true") {
+    query.winningBidder = userId;
+    query.status = "completed";
   }
+
+  if (participated === "true") {
+    // Auctions where user placed at least one bid
+    const userBidAuctions = await Bid.distinct("auction", { bidder: userId });
+    query._id = { $in: userBidAuctions };
+  }
+
+  if (seller === "true") {
+    query.seller = userId;
+  }
+
+  const auctions = await Auction.find(query)
+    .populate("seller", "username")
+    .populate("category", "name")
+    .populate({
+      path: "bids",
+      match: { bidder: userId }, // show only user’s bids
+      options: { sort: { amount: -1 } },
+    })
+    .sort("-endDate");
+
+  res.status(200).json({ success: true, data: auctions });
 });
+
 
 module.exports = {
   getAllUsers,
@@ -324,5 +332,5 @@ module.exports = {
   getUserFavorites,
   updateUserRole,
   getLoggedUser,
-  getWonAuctions,
+  getMyAuctions,
 };
