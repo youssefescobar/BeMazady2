@@ -32,7 +32,7 @@ router.get(
   userController.getUserById
 );
 
-router.get("/won-auctions", protect, userController.getWonAuctions);
+router.get("/Myauctions", protect, userController.getMyAuctions);
 // User & Admin: Get user by ID (users can only see their own info)
 router.get("/:id", protect, GetUserByIdValidator, userController.getUserById);
 
