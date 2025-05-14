@@ -219,6 +219,26 @@ exports.createConversation = async (req, res) => {
       return res.status(404).json({ error: 'Recipient not found' });
     }
     
+    // Check permissions based on user roles
+    const senderRole = req.user.role;
+    const recipientRole = recipient.role;
+    
+    // Allow conversations only between: buyer-seller, buyer-admin, seller-admin, admin-admin
+    const isAllowed = 
+      // Admin can talk to anyone (including other admins)
+      senderRole === 'admin' ||
+      // Recipient is admin (anyone can message admin)
+      recipientRole === 'admin' ||
+      // Buyer can message seller and vice versa
+      (senderRole === 'buyer' && recipientRole === 'seller') ||
+      (senderRole === 'seller' && recipientRole === 'buyer');
+    
+    if (!isAllowed) {
+      return res.status(403).json({ 
+        error: 'You cannot start a conversation with this user type' 
+      });
+    }
+    
     // Check if conversation already exists
     let conversation = await Conversation.findOne({
       participants: { $all: [req.user._id, recipientId] }
@@ -227,7 +247,7 @@ exports.createConversation = async (req, res) => {
     // If conversation exists, return it
     if (conversation) {
       conversation = await conversation
-        .populate('participants', 'username avatar')
+        .populate('participants', 'username avatar role')
         .populate('lastMessage')
         .execPopulate();
         
@@ -241,7 +261,7 @@ exports.createConversation = async (req, res) => {
     
     await newConversation.save();
     
-    // Add this in the createConversation function after saving the conversation
+    // Add notification after saving the conversation
     try {
       await NotificationController.createNotification(
         req,
@@ -258,7 +278,7 @@ exports.createConversation = async (req, res) => {
     
     // Populate and return the new conversation
     const populatedConversation = await Conversation.findById(newConversation._id)
-      .populate('participants', 'username avatar');
+      .populate('participants', 'username avatar role');
     
     // Notify the recipient if they're online
     const io = req.app.get('io');
