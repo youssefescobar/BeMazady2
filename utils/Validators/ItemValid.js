@@ -5,11 +5,10 @@ const SubcategoryModel = require("../../models/subcategory");
 const CreateItemValidator = [
   check("title").notEmpty().withMessage("Item title is required"),
 
-  check("item_status")
-    .notEmpty()
-    .withMessage("Item status is required")
-    .isIn(["available", "sold", "pending"])
-    .withMessage("Invalid item status"),
+check("item_status")
+  .optional()
+  .isIn(["available", "sold", "pending"])
+  .withMessage("Invalid item status"),
 
   check("description").notEmpty().withMessage("Item description is required"),
 
@@ -21,7 +20,11 @@ const CreateItemValidator = [
     .isFloat({ min: 0 })
     .withMessage("Price must be a positive number"),
 
-  check("is_featured").optional().isBoolean().withMessage("Must be a boolean"),
+check("is_featured")
+  .optional()
+  .isBoolean()
+  .withMessage("Must be a boolean"),
+
 
   // Validate item_pictures (accepts both file uploads & URLs)
   check("item_pictures").custom((value, { req }) => {

@@ -19,7 +19,7 @@ const ItemSchema = new mongoose.Schema(
 
     item_status: {
       type: String,
-      required: true,
+      required: false,
       enum: ["available", "sold", "pending"],
       default: "available",
     },
@@ -38,6 +38,8 @@ const ItemSchema = new mongoose.Schema(
 
     is_featured: {
       type: Boolean,
+      required: false,
+      enum: [true, false],
       default: false,
     },
 
