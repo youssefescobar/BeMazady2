@@ -37,8 +37,8 @@ const createCheckoutSession = asyncHandler(async (req, res, next) => {
     payment_method_types: ["card"],
     line_items,
     mode: "payment",
-    success_url: `${process.env.FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${process.env.FRONTEND_URL}/payment/canceled`,
+    success_url: `${process.env.FRONTEND_URL}/payment/success`,
+    cancel_url: `${process.env.FRONTEND_URL}/order-fail`,
     customer_email: order.user.email,
     metadata: {
       orderId: order._id.toString(),
