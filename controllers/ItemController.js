@@ -122,18 +122,17 @@ const UpdateItem = asyncHandler(async (req, res, next) => {
 const DeleteItem = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
   const item = await Item.findById(id);
+  
   if (!item) {
     return next(new ApiError(`No item with id: ${id}`, 404));
   }
-  // make sure the owner is the one deleting or an admin
-  if (
-    req.user.role !== "admin" &&
-    item.owner.toString() !== req.user._id.toString()
-  ) {
+
+  // Sellers can only delete their own items
+  if (req.user.role === "seller" && item.owner.toString() !== req.user._id.toString()) {
     return next(new ApiError("Not authorized to delete this item", 403));
   }
 
-
+  // Admins can delete any item
   await Item.findByIdAndDelete(id);
 
   res.status(204).json({ status: "success", message: "Item Deleted Successfully" });

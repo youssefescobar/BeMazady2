@@ -36,7 +36,8 @@ exports.getMessages = async (req, res) => {
       ]
     })
     .sort({ createdAt: 1 })
-    .populate('sender', 'username avatar');
+    .populate('sender', 'username avatar')
+    .populate('recipient', 'username avatar'); 
     
     res.status(200).json(messages);
   } catch (error) {
