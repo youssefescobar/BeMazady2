@@ -128,7 +128,7 @@ app.get("/", (req, res) => {
 });
 
 // Handle route errors
-app.all("*", (req, res, next) => {
+app.all("*", (req, res, next) => { 
   next(new ApiError(`Can't find this route: ${req.originalUrl}`, 400));
 });
 
