@@ -6,18 +6,43 @@ const NotificationController = require('../controllers/NotificationController');
 
 exports.getConversations = async (req, res) => {
   try {
+    // Get all conversations for the user
     const conversations = await Conversation.find({
       participants: req.user._id
     })
     .populate('participants', 'username avatar')
     .populate('lastMessage')
     .sort({ updatedAt: -1 });
+
+    // Enhance each conversation with unread message count
+    const enhancedConversations = await Promise.all(
+      conversations.map(async (conversation) => {
+        // Find the other participant (not the current user)
+        const otherParticipant = conversation.participants.find(
+          p => p._id.toString() !== req.user._id.toString()
+        );
+
+        // Count unread messages in this conversation
+        const unreadCount = await Message.countDocuments({
+          sender: otherParticipant._id,
+          recipient: req.user._id,
+          isRead: false
+        });
+
+        // Convert to plain object to add the unreadCount property
+        const conversationObj = conversation.toObject();
+        conversationObj.unreadCount = unreadCount;
+        
+        return conversationObj;
+      })
+    );
     
-    res.status(200).json(conversations);
+    res.status(200).json(enhancedConversations);
   } catch (error) {
+    console.error('Error fetching conversations:', error);
     res.status(500).json({ error: 'Failed to fetch conversations' });
   }
-}; 
+};
 
 exports.getMessages = async (req, res) => {
   try {
@@ -63,7 +88,7 @@ exports.sendMessage = async (req, res) => {
       sender: req.user._id,
       recipient: recipientId,
       content,
-      referenceId // Include the referenceId if provided
+      referenceId
     });
     
     await message.save();
@@ -99,33 +124,57 @@ exports.sendMessage = async (req, res) => {
       });
     }
     
+    // Create notification
     try {
       await NotificationController.createNotification(
         req,
         recipientId,
         `You have a new message from ${req.user.username}`,
         'message',
-        req.user._id,  // This is likely supposed to be the senderId
+        req.user._id,
         message._id,
         referenceId
       );
     } catch (notifError) {
       console.error('Notification error:', notifError);
-      // Continue execution even if notification fails
     }
     
-    // Update conversation list for recipient
-    if (connectedUsers && connectedUsers[recipientId]) {
-      const updatedConversation = await Conversation.findById(conversation._id)
-        .populate('participants', 'username avatar')
-        .populate('lastMessage');
-      
-      io.to(connectedUsers[recipientId]).emit('update_conversation', {
-        conversation: updatedConversation
-      });
-    }
+    // Update conversation list for both participants with unread counts
+    const updateConversationForUser = async (userId, isRecipient = false) => {
+      if (connectedUsers && connectedUsers[userId]) {
+        const updatedConversation = await Conversation.findById(conversation._id)
+          .populate('participants', 'username avatar')
+          .populate('lastMessage');
+        
+        // Calculate unread count for this user
+        const otherParticipantId = userId === req.user._id.toString() ? recipientId : req.user._id;
+        const unreadCount = isRecipient 
+          ? 1 // This is a new message, so recipient has 1 unread
+          : await Message.countDocuments({
+              sender: otherParticipantId,
+              recipient: userId,
+              isRead: false
+            });
+        
+        const conversationObj = updatedConversation.toObject();
+        conversationObj.unreadCount = unreadCount;
+        
+        io.to(connectedUsers[userId]).emit('update_conversation', {
+          conversation: conversationObj
+        });
+      }
+    };
     
-    res.status(201).json(message);
+    // Update for recipient (with unread count = 1)
+    await updateConversationForUser(recipientId, true);
+    
+    // Update for sender (with their actual unread count)
+    await updateConversationForUser(req.user._id.toString());
+    
+    res.status(201).json({
+      message: populatedMessage,
+      conversationId: conversation._id
+    });
   } catch (error) {
     console.error('Message error:', error);
     res.status(500).json({ error: 'Failed to send message' });
@@ -136,14 +185,42 @@ exports.markAsRead = async (req, res) => {
   try {
     const { conversationId } = req.params;
     
+    const conversation = await Conversation.findById(conversationId);
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    
+    // Find the other participant
+    const otherParticipant = conversation.participants.find(
+      p => p.toString() !== req.user._id.toString()
+    );
+    
     await Message.updateMany(
       { 
-        sender: { $ne: req.user._id },
+        sender: otherParticipant,
         recipient: req.user._id,
         isRead: false
       },
       { isRead: true }
     );
+    
+    // Emit update to the other participant that messages were read
+    const io = req.app.get('io');
+    const connectedUsers = req.app.get('connectedUsers');
+    
+    if (connectedUsers && connectedUsers[otherParticipant]) {
+      const updatedConversation = await Conversation.findById(conversationId)
+        .populate('participants', 'username avatar')
+        .populate('lastMessage');
+      
+      // Unread count should now be 0 since we just marked them as read
+      const conversationObj = updatedConversation.toObject();
+      conversationObj.unreadCount = 0;
+      
+      io.to(connectedUsers[otherParticipant]).emit('update_conversation', {
+        conversation: conversationObj
+      });
+    }
     
     res.status(200).json({ message: 'Messages marked as read' });
   } catch (error) {
