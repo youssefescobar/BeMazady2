@@ -132,14 +132,17 @@ exports.getTopSellers = asyncHandler(async (req, res) => {
 // ========== SELLER CONTROLLERS ==========
 
 // GET /api/analytics/seller/overview
+// GET /api/analytics/seller/overview
 exports.getSellerOverview = asyncHandler(async (req, res) => {
   const sellerId = req.userId;
 
+  // Get counts for items and auctions owned by this seller
   const [itemCount, auctionCount] = await Promise.all([
     Item.countDocuments({ owner: sellerId }),
     Auction.countDocuments({ seller: sellerId }),
   ]);
 
+  // Get revenue and profit from orders where this seller is involved
   const orders = await Order.aggregate([
     { $match: { status: "paid" } },
     { $unwind: "$items" },
@@ -149,6 +152,15 @@ exports.getSellerOverview = asyncHandler(async (req, res) => {
         _id: "$items.itemType",
         totalSold: { $sum: 1 },
         revenue: { $sum: "$items.priceAtPurchase" },
+        profit: {
+          $sum: {
+            $cond: [
+              { $eq: ["$items.itemType", "auction"] },
+              { $multiply: ["$items.priceAtPurchase", 0.05] },
+              { $multiply: ["$items.priceAtPurchase", 0.03] },
+            ],
+          },
+        },
       },
     },
   ]);
@@ -159,16 +171,19 @@ exports.getSellerOverview = asyncHandler(async (req, res) => {
     itemSold: 0,
     auctionSold: 0,
     revenue: 0,
+    profit: 0,
   };
 
   orders.forEach((o) => {
     if (o._id === "item") stats.itemSold = o.totalSold;
     else if (o._id === "auction") stats.auctionSold = o.totalSold;
     stats.revenue += o.revenue;
+    stats.profit += o.profit;
   });
 
   res.json(stats);
 });
+
 
 // GET /api/analytics/seller/my-items?status=available&page=1&limit=10
 exports.getMyItems = asyncHandler(async (req, res) => {
