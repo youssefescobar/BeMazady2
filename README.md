@@ -55,7 +55,7 @@ All APIs are prefixed with `/api`. Key routes include:
 Root Route:  
 ```bash
 GET /
-Response: "Api is running ya tohamy"
+Response: "Api is running."
 ```
 ---
 
@@ -107,14 +107,15 @@ MAILER_PORT=465
 MAILER_EMAIL=your_email@gmail.com
 MAILER_PASSWORD=your_email_app_password
 
-Stripe_API_KEY=your_Stripe_api_key
-Stripe_INTEGRATION_ID=your_integration_id
-Stripe_IFRAME_ID=your_iframe_id
-Stripe_HMAC_SECRET=your_hmac_secret
+STRIPE_SECRET_KEY=your_Stripe_api_key
+STRIPE_PUBLISHABLE_KEY=your_integration_id
+STRIPE_WEBHOOK_SECRET=your_iframe_id
 
 CLOUDINARY_CLOUD_NAME=your_cloudinary_name
 CLOUDINARY_API_KEY=your_cloudinary_key
 CLOUDINARY_API_SECRET=your_cloudinary_secret
+
+FRONTEND_URL=http://xyz.com
 ```
 
 ### 🚀 Run the App
