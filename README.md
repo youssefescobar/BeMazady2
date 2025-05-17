@@ -15,7 +15,7 @@
 - 📦 Modular REST API structure with well-separated routes
 - 🔐 JWT-based authentication with role support (Admin, Seller, Buyer)
 - 📬 Email integration and real-time notifications
-- 💳 Payment gateway via Paymob
+- 💳 Payment gateway via Stripe
 - ☁️ Image handling via Cloudinary
 - 📊 Analytics routes for users, sellers, and admins
 
@@ -27,7 +27,7 @@
 - **Database:** MongoDB (Atlas)
 - **AI:** Hybrid Recommendation System, CNN/NLP for item validation
 - **Auth:** JWT
-- **Payment:** Paymob
+- **Payment:** Stripe
 - **Storage:** Cloudinary
 - **Containerization:** Docker (local, optional)
 
@@ -47,7 +47,7 @@ All APIs are prefixed with `/api`. Key routes include:
 - `/users` — User profiles and roles
 - `/cart` — Shopping cart operations
 - `/orders` — Order placement & history
-- `/payments` — Paymob integration
+- `/payments` — Stripe integration
 - `/notifications` — User alerts & updates
 - `/messages` — Messaging between users
 - `/analytics` — Metrics dashboard for admins & sellers
@@ -76,7 +76,7 @@ Response: "Api is running ya tohamy"
 - Node.js v18+
 - MongoDB Atlas (or local instance)
 - A `.env` file (see `.env.example`)
-- Cloudinary & Paymob accounts
+- Cloudinary & Stripe accounts
 
 ---
 
@@ -107,10 +107,10 @@ MAILER_PORT=465
 MAILER_EMAIL=your_email@gmail.com
 MAILER_PASSWORD=your_email_app_password
 
-PAYMOB_API_KEY=your_paymob_api_key
-PAYMOB_INTEGRATION_ID=your_integration_id
-PAYMOB_IFRAME_ID=your_iframe_id
-PAYMOB_HMAC_SECRET=your_hmac_secret
+Stripe_API_KEY=your_Stripe_api_key
+Stripe_INTEGRATION_ID=your_integration_id
+Stripe_IFRAME_ID=your_iframe_id
+Stripe_HMAC_SECRET=your_hmac_secret
 
 CLOUDINARY_CLOUD_NAME=your_cloudinary_name
 CLOUDINARY_API_KEY=your_cloudinary_key
