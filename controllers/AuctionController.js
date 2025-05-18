@@ -27,6 +27,7 @@ const createAuction = asyncHandler(async (req, res) => {
       description,
       title,
       category,
+      sellerId // Optional field for admin to specify seller
     } = req.body;
 
     if (!title) {
@@ -52,7 +53,15 @@ const createAuction = asyncHandler(async (req, res) => {
       });
     }
 
-    const seller = req.user.id;
+    // Determine the seller
+    let seller;
+    if (req.user.role === 'admin' && sellerId) {
+      // If user is admin and provided a sellerId, use that
+      seller = sellerId;
+    } else {
+      // Otherwise use the authenticated user's ID
+      seller = req.user.id;
+    }
 
     const auctionData = {
       seller,
@@ -60,8 +69,8 @@ const createAuction = asyncHandler(async (req, res) => {
       description: description || "",
       startPrice: Number(startPrice),
       currentPrice: Number(startPrice),
-      status: "pending",
-      category, // Add the category field
+      status: req.user.role === 'admin' ? 'active' : 'pending', // Admin-created auctions can be active immediately
+      category,
     };
 
     if (reservePrice) auctionData.reservePrice = Number(reservePrice);
@@ -93,29 +102,33 @@ const createAuction = asyncHandler(async (req, res) => {
       .populate("seller", "username _id")
       .populate("category", "name");
 
-    // Send auction to moderation in the background without blocking the request
-    // This is done asynchronously
-    moderateAuctionAsync(
-      auction._id,
-      auction.auctionCover, // Or any image URL you'd like to send
-      auction.description,
-      req.user // Pass the authenticated user
-    )
-      .then((updatedAuction) => {
-        console.log(`Auction ${updatedAuction.title} moderation completed.`);
-      })
-      .catch((error) => {
-        console.error(`Moderation failed for auction ${auction.title}:`, error);
-      });
+    // Only moderate if the auction is not created by admin
+    if (req.user.role !== 'admin') {
+      moderateAuctionAsync(
+        auction._id,
+        auction.auctionCover,
+        auction.description,
+        req.user
+      )
+        .then((updatedAuction) => {
+          console.log(`Auction ${updatedAuction.title} moderation completed.`);
+        })
+        .catch((error) => {
+          console.error(`Moderation failed for auction ${auction.title}:`, error);
+        });
+    }
 
     // Respond to the user with the created auction immediately
-    res.status(201).json({ success: true, message: "Auction awaiting approval",data: populatedAuction });
+    res.status(201).json({ 
+      success: true, 
+      message: req.user.role === 'admin' ? "Auction created successfully" : "Auction awaiting approval",
+      data: populatedAuction 
+    });
   } catch (error) {
     console.error("Error creating auction:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
-
 
 // Place a bid on an auction
 const placeBid = asyncHandler(async (req, res) => {
