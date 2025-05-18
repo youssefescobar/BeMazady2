@@ -26,7 +26,6 @@ const CartRoutes = require("./routes/CartRoute");
 const paymentRoutes = require("./routes/paymentRoutes");
 const OrderRoutes = require("./routes/OrderRoutes");
 const analyticsRoutes = require("./routes/AnalyticsRoutes");
-const ReverseAuctionRoute = require("./routes/ReverseAuctionRoute");
 
 // Initialize Express app
 const app = express();
@@ -121,7 +120,6 @@ app.use("/api/recommendations", recommendationRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/orders", OrderRoutes);
 app.use('/api/analytics', analyticsRoutes);
-app.use("/api/reverseauctions", ReverseAuctionRoute);
 
 app.get("/", (req, res) => {
   res.send("Api is running");
