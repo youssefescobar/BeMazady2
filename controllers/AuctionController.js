@@ -262,7 +262,7 @@ const buyNowAuction = asyncHandler(async (req, res, next) => {
       payment_method_types: ["card"],
       line_items: [{
         price_data: {
-          currency: "usd",
+          currency: "egp",
           product_data: {
             name: auction.title,
             description: `Buy Now: ${auction.title}`,

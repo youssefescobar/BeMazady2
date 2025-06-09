@@ -145,7 +145,7 @@ const checkoutCart = asyncHandler(async (req, res, next) => {
       payment_method_types: ["card"],
       line_items: orderItems.map(item => ({
         price_data: {
-          currency: "usd",
+          currency: "egp",
           product_data: {
             name: `Item ${item.item.toString().slice(-4)}`,
             metadata: { itemId: item.item.toString() }
