@@ -32,13 +32,10 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: [
-      "http://localhost:5173",
-      "https://bemzady.netlify.app"
-    ],
+    origin: ["http://localhost:5173", "https://bemzady.netlify.app"],
     methods: ["GET", "POST"],
-    credentials: true
-  }
+    credentials: true,
+  },
 });
 
 // Connect to database
@@ -55,43 +52,43 @@ app.use(compression());
 // });
 // app.use(limiter);
 
-app.use(
-  "/api/payment/webhook",
-  express.raw({ type: "application/json" })
-);
+app.use("/api/payment/webhook", express.raw({ type: "application/json" }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Enhanced CORS configuration
-const allowedOrigins = [
-  "http://localhost:5173",
-  "https://bemzady.netlify.app"
-];
+const allowedOrigins = ["http://localhost:5173", "https://be-mzady.vercel.app"];
 
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    // Check against allowed origins or any subpath of bemzady.netlify.app
-    if (allowedOrigins.some(allowedOrigin => 
-        origin === allowedOrigin || 
-        origin.startsWith(allowedOrigin) ||
-        origin.endsWith('.bemzady.netlify.app'))) {
-      return callback(null, true);
-    }
-    
-    const msg = `CORS policy doesn't allow access from: ${origin}`;
-    return callback(new Error(msg), false);
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-}));
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+
+      // Check against allowed origins or any subpath of bemzady.netlify.app
+      if (
+        allowedOrigins.some(
+          (allowedOrigin) =>
+            origin === allowedOrigin ||
+            origin.startsWith(allowedOrigin) ||
+            origin.endsWith(".bemzady.netlify.app")
+        )
+      ) {
+        return callback(null, true);
+      }
+
+      const msg = `CORS policy doesn't allow access from: ${origin}`;
+      return callback(new Error(msg), false);
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  })
+);
 
 // Handle preflight requests
-app.options('*', cors());
+app.options("*", cors());
 
 app.use(morgan("dev"));
 
@@ -119,14 +116,14 @@ app.use("/api/users", UserRoute);
 app.use("/api/recommendations", recommendationRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/orders", OrderRoutes);
-app.use('/api/analytics', analyticsRoutes);
+app.use("/api/analytics", analyticsRoutes);
 
 app.get("/", (req, res) => {
   res.send("Api is running");
 });
 
 // Handle route errors
-app.all("*", (req, res, next) => { 
+app.all("*", (req, res, next) => {
   next(new ApiError(`Can't find this route: ${req.originalUrl}`, 400));
 });
 
