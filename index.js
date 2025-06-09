@@ -65,8 +65,6 @@ app.use(
     origin: function (origin, callback) {
       // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) return callback(null, true);
-
-      // Check against allowed origins or any subpath of bemzady.netlify.app
       if (
         allowedOrigins.some(
           (allowedOrigin) =>
