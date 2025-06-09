@@ -72,7 +72,7 @@ app.use(
           (allowedOrigin) =>
             origin === allowedOrigin ||
             origin.startsWith(allowedOrigin) ||
-            origin.endsWith(".bemzady.netlify.app")
+            origin.endsWith(".vercel.app")
         )
       ) {
         return callback(null, true);
