@@ -69,7 +69,8 @@ const GetItem = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
   const item = await Item.findById(id)
     .populate({ path: "category", select: "name" })
-    .populate({ path: "subcategory", select: "name" });
+    .populate({ path: "subcategory", select: "name" })
+    .populate({ path: "owner", select: "address" });
 
   if (!item) {
     return next(new ApiError(`No Item with id: ${id}`, 404));
@@ -117,25 +118,29 @@ const UpdateItem = asyncHandler(async (req, res, next) => {
   res.status(200).json({ status: "success", data: updatedItem });
 });
 
-
 // Delete Item - Public
 const DeleteItem = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
   const item = await Item.findById(id);
-  
+
   if (!item) {
     return next(new ApiError(`No item with id: ${id}`, 404));
   }
 
   // Sellers can only delete their own items
-  if (req.user.role === "seller" && item.owner.toString() !== req.user._id.toString()) {
+  if (
+    req.user.role === "seller" &&
+    item.owner.toString() !== req.user._id.toString()
+  ) {
     return next(new ApiError("Not authorized to delete this item", 403));
   }
 
   // Admins can delete any item
   await Item.findByIdAndDelete(id);
 
-  res.status(204).json({ status: "success", message: "Item Deleted Successfully" });
+  res
+    .status(204)
+    .json({ status: "success", message: "Item Deleted Successfully" });
 });
 
 const AddReview = asyncHandler(async (req, res) => {
