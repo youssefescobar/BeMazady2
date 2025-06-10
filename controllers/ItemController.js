@@ -70,7 +70,7 @@ const GetItem = asyncHandler(async (req, res, next) => {
   const item = await Item.findById(id)
     .populate({ path: "category", select: "name" })
     .populate({ path: "subcategory", select: "name" })
-    .populate({ path: "owner", select: "address" });
+    .populate({ path: "owner", select: "address username email" });
 
   if (!item) {
     return next(new ApiError(`No Item with id: ${id}`, 404));
