@@ -91,4 +91,7 @@ router.delete(
   userController.removeFromFavorites
 );
 
+
+router.post("/check-username", userController.checkUsername);
+
 module.exports = router;

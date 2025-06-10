@@ -320,6 +320,23 @@ const getMyAuctions = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: auctions });
 });
 
+const checkUsername = asyncHandler(async (req, res)=>{
+  const {username} = req.body
+  if (!username) {
+    return res.status(400).json({ message: 'Username is required' });
+  }
+
+  const userExists = await User.findOne({ username });
+
+  if (userExists) {
+    return res.status(409).json({ message: 'Username already taken' });
+  }
+
+  res.status(200).json({ message: 'Username is available' });
+}); 
+
+
+
 
 module.exports = {
   getAllUsers,
@@ -333,4 +350,5 @@ module.exports = {
   updateUserRole,
   getLoggedUser,
   getMyAuctions,
+  checkUsername,
 };
