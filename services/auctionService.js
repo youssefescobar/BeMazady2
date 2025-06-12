@@ -20,7 +20,7 @@ const moderateAuctionAsync = async (auctionId, imageUrl, description, user) => {
       // Dynamically import the Client from @gradio/client
       const { Client } = await import('@gradio/client');
     
-      const client = await Client.connect("usef143/Auto-enlister");
+      const client = await Client.connect("usef143/Bemazady_Auto_enlister");
     
       // Send request to Hugging Face model
       const result = await client.predict("/predict", {
