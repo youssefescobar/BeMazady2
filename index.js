@@ -26,7 +26,7 @@ const CartRoutes = require("./routes/CartRoute");
 const paymentRoutes = require("./routes/paymentRoutes");
 const OrderRoutes = require("./routes/OrderRoutes");
 const analyticsRoutes = require("./routes/AnalyticsRoutes");
-
+const ChatbotRoutes = require("./routes/ChatbotRoutes")
 // Initialize Express app
 const app = express();
 const server = http.createServer(app);
@@ -115,6 +115,7 @@ app.use("/api/recommendations", recommendationRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/orders", OrderRoutes);
 app.use("/api/analytics", analyticsRoutes);
+app.use('/api/chatbot', ChatbotRoutes);
 
 app.get("/", (req, res) => {
   res.send("Api is running");
