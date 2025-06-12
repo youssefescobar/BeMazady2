@@ -42,6 +42,9 @@ class ChatbotService {
   }
 
   // Call Groq API
+// ... inside the ChatbotService class
+
+  // Call Groq API
   async callGroq(messages) {
     try {
       const response = await axios.post(
@@ -62,10 +65,25 @@ class ChatbotService {
 
       return response.data.choices[0].message.content;
     } catch (error) {
-      console.error("Error calling Groq:", error);
-      throw error;
+      // THIS IS THE MODIFIED BLOCK
+      console.error("Error calling Groq API:");
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        console.error("Response Data:", error.response.data);
+        console.error("Response Status:", error.response.status);
+      } else if (error.request) {
+        // The request was made but no response was received
+        console.error("Request Error:", error.request);
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        console.error("Error Message:", error.message);
+      }
+      throw error; // Still throw the error to be caught by the calling function
     }
   }
+
+// ... rest of the file
 
   // Build system prompt with FAQ context
   buildSystemPrompt(faqResults) {
