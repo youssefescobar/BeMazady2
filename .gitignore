@@ -5,3 +5,5 @@ logs/
 .vercel
 /extra/embedFaq.js
 /extra/FAQ.md
+collection.json
+env.json
